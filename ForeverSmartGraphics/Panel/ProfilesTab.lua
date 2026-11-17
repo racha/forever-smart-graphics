@@ -87,16 +87,20 @@ local function usage(id)
 	return #used > 0 and string.format(L.USED_IN, table.concat(used, ", ")) or L.NOT_USED
 end
 
+local function usedCount(id)
+	local count = 0
+	for _, key in ipairs(ns.Location.KEYS) do if (ns.db.locations[key] or "default") == id then count = count + 1 end end
+	for _, override in pairs(ns.db.overrides) do if override.profile == id then count = count + 1 end end
+	return count == 1 and L.USED_COUNT_ONE or string.format(L.USED_COUNT, count)
+end
+
 local function usageLine(profile)
-	local second
-	if profile.id == "default" then
-		second = L.EVERY_OTHER
-	else
-		local preset = UI.PresetOf(profile.id)
-		local own = 0
-		for _ in pairs(profile.values) do own = own + 1 end
-		second = preset and string.format(L.PRESET_NAMED, UI.PresetName(preset)) or (own > 0 and string.format(L.OWN_COUNT, own) or L.OWN_NONE)
-	end
+	if profile.id == "default" then return L.USED_BY_DEFAULT end
+
+	local preset = UI.PresetOf(profile.id)
+	local own = 0
+	for _ in pairs(profile.values) do own = own + 1 end
+	local second = preset and string.format(L.PRESET_NAMED, UI.PresetName(preset)) or (own > 0 and string.format(L.OWN_COUNT, own) or L.OWN_NONE)
 	return usage(profile.id) .. " · " .. second
 end
 
@@ -402,6 +406,10 @@ local function refreshList(content)
 		row.label:SetText(profile.name)
 		row.tag:SetShown(active.profileId == id)
 		row.usage:SetText(usageLine(profile))
+		-- Too long for the line: just where it is used, then just how many places; never cut.
+		local fits = function() return UI.TextWidth(row.usage) <= row.usage:GetWidth() end
+		if not fits() then row.usage:SetText(usage(profile.id)) end
+		if not fits() then row.usage:SetText(usedCount(profile.id)) end
 		row.onClick = function() openEditor(id) end
 		row.edit.action = row.onClick
 		flow:Add(row, LIST_ROW_H, LIST_ROW_GAP)

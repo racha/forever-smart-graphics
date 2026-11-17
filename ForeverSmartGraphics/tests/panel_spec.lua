@@ -291,6 +291,7 @@ check(main.nodes[1].category == nil, "the page's first control comes first in th
 -- The status strip: Here > Profile > Smart, the FPS against the goal; each segment a link.
 local strip = main.strip
 check(strip.x == 62 and strip.y == -27 and strip.h == 37, "strip in the native tab band, right of the portrait")
+check(strip.here.value.w >= #strip.here.value:GetText() * 6 and strip.here.w >= 8 * 2 + strip.here.caption:GetStringWidth() + 6 + strip.here.value.w - 1, "the Here value keeps its whole text inside its segment, clear of the chevron")
 check(strip.here.value:GetText() == "Stormwind Keep · City" and strip.profile.value:GetText() == "City" and strip.smart.value:GetText() == L.STRIP_OFF, "Here, Profile, Smart off")
 check(strip.fps:GetText() == "60 fps" and strip.target:GetText() == "target 60" and strip.fps.textColor[2] == 1 and strip.fps.textColor[1] < 0.5, "FPS green at the goal, its target")
 check(math.abs(strip.fill.w - 96 * 60 / 90) < 1e-6, "the meter fills fps / (goal x 1.5)")
@@ -370,6 +371,11 @@ listRows()[3]:Click()
 check(page.why:GetText():find("and Smart mode adjusts it to hold", 1, true), "the why sentence follows Smart")
 check(strip.smart.value:GetText() == "Holding · FPS · Smooth", "the strip: status, goal, pace: " .. strip.smart.value:GetText())
 check(page.summary:GetText():find("City", 1, true) and page.summary:GetText():find("1 specific place", 1, true), "by location summary: " .. page.summary:GetText())
+local summaryLines = {}
+for line in page.summary:GetText():gmatch("[^\n]+") do summaryLines[#summaryLines + 1] = line end
+local dangling = false
+for _, line in ipairs(summaryLines) do dangling = dangling or line:find("·%s*$") or line:find("^%s*·") end
+check(#summaryLines > 1 and not dangling and summaryLines[#summaryLines]:find("1 specific place$"), "by location breaks between places only, no dangling separator: " .. table.concat(summaryLines, " / "))
 buttonNode(L.SET_UP_LOCATIONS).region:Click()
 check(UI.Selection().key == "locations", "Set up locations")
 open("overview")
@@ -425,8 +431,8 @@ open("profiles")
 check(main.canvas.title:GetText() == L.TAB_PROFILES and buttonNode(L.NEW_PROFILE), "Profiles with New profile... in the bar")
 local defaultRow = nodeWhere(function(n) return n.profileRowId == "default" end)
 local cityRow = nodeWhere(function(n) return n.profileRowId == "p1" end)
-check(defaultRow.region.usage:GetText() == "Used in Open world, Dungeon, Raid, Battleground, Arena · " .. L.EVERY_OTHER, "Default's usage: " .. defaultRow.region.usage:GetText())
-check(cityRow.region.usage:GetText() == "Used in City, Stormwind City (specific place) · 1 settings of its own, the rest follow Default" and cityRow.region.tag:IsShown() and not defaultRow.region.tag:IsShown(), "City: used in, own count, In use here now")
+check(defaultRow.region.usage:GetText() == "Used everywhere without its own profile", "Default's usage, short enough for its line: " .. defaultRow.region.usage:GetText())
+check(cityRow.region.usage:GetText() == "Used in City, Stormwind City (specific place)" and cityRow.region.tag:IsShown() and not defaultRow.region.tag:IsShown(), "City: used in, own count, In use here now")
 check(cityRow.region.h == 44 and cityRow.region.edit:GetText() == L.EDIT, "44 tall rows with Edit")
 cityRow.region:Click()
 check(UI.Selection().key == "profile" and UI.Selection().id == "p1" and main.canvas.title:GetText() == "City", "a click on the row opens the editor")
@@ -545,8 +551,16 @@ open("locations")
 local switch = labelled(L.SWITCHING)
 check(switch.region.hint:GetText() == L.SWITCHING_HINT, "Switch by location with its hint")
 local city = labelled("City")
-check(city.region.here:IsShown() and city.region.choice.text:GetText() == "Raid night" and city.region.choice.x == 192 and city.region.second.x == 418, "City row: you are here, Profile at 192, Smart goal at 418")
-check(city.region.second.text:GetText() == "Default (FPS)" and city.region.second.off, "the goal shows its value, greyed while Smart is off")
+check(city.region.here:IsShown() and city.region.choice.text:GetText() == "Raid night" and city.region.choice.x == 192 and city.region.second.x == 410 and city.region.second.w == 168 + 44, "City row: you are here, Profile at 192, Smart goal at 410, 168 wide")
+check(city.region.second.text:GetText() == "Default: FPS" and city.region.second.off, "the goal shows its value, greyed while Smart is off")
+local locPage = city.region:GetParent()
+check(locPage.placeCaption:IsShown() and locPage.placeCaption.flowY > locPage.placesWin.flowY, "the places' Profile header sits over their rows, under the line that explains them")
+local savedOverrides = ns.db.overrides
+ns.db.overrides = {}
+main:Refresh()
+check(not locPage.placeCaption:IsShown() and locPage.empty:IsShown(), "no places: no Profile header over the empty line")
+ns.db.overrides = savedOverrides
+main:Refresh()
 check(nodeWhere(function(n) return n.styleKey end) == nil, "greyed goals take no focus")
 main:Focus(city)
 W.press(main, "PADDLEFT")
@@ -557,7 +571,7 @@ local style = nodeWhere(function(n) return n.styleKey == "city" end)
 check(style and not labelled("City").region.second.off, "the goal column comes on with Smart")
 check(main.list and labelled("City").region:GetParent().styleCaption:GetText() == L.COLUMN_STYLE, "column caption Smart goal")
 style.region:Click()
-check(listRows()[1].name:GetText() == "Default (FPS)" and listRows()[4].name:GetText() == "Fidelity" and listRows()[5]:IsShown() == false, "Default, then the three goals")
+check(listRows()[1].name:GetText() == "Default: FPS" and listRows()[4].name:GetText() == "Fidelity" and listRows()[5]:IsShown() == false, "Default, then the three goals")
 listRows()[4]:Click()
 check(last(ns, "SetLocationGoal")[2] == "city" and last(ns, "SetLocationGoal")[3] == "fidelity", "a goal per location type")
 nodeWhere(function(n) return n.styleKey == "city" end).region:Click()
@@ -596,6 +610,12 @@ check(last(ns, "SetEnabled")[2] == true and smartPage.lines[1]:GetText():find("H
 check(smartPage.lines[3]:GetText() == "Last change: Render scale 75% to 70%", "last change")
 check(smartPage.goal.desc:GetText() == "Holds the target first." and smartPage.pace.desc:GetText() == "Changes only when you enter a new area.", "goal and pace with their lines")
 check(smartPage.lines[1]:GetText():find("FPS · Smooth", 1, true), "right now names the goal and pace")
+ns.smartState = { status = "holding", fps = 74, target = 75, goal = 72, ceiling = 74 }
+W.advance(1.1)
+check(smartPage.lines[1]:GetText():find("Holding · 74 fps, goal 72 (display tops out at 74)", 1, true), "Smart's goal, with the display's ceiling: " .. smartPage.lines[1]:GetText())
+ns.smartState = nil
+W.advance(1.1)
+check(not smartPage.lines[1]:GetText():find("tops out", 1, true), "no ceiling known: no aside")
 smartPage.goal:Click()
 listRows()[2]:Click()
 check(last(ns, "SetGoal")[2] == "balanced", "the Smart page's Goal")
@@ -614,7 +634,7 @@ check(last(ns, "SaveAsProfile")[3] == "City (smart)", "Save as profile")
 local lagFold = nodeWhere(function(n) return n.foldKey == "lagged" end)
 lagFold.region:Click()
 local lag = labelled("Orgrimmar")
-check(lag and lag.region.detail:GetText() == "avg 52 fps · low 31 · below target 40% of the time · fights -25%", "lag row")
+check(lag and lag.region.detail:GetText() == "avg 52 · low 31 fps · 40% under target · fights -25%", "lag row")
 lag.region.buttons[1]:Click()
 check(last(ns, "ForgetArea")[2] == "map:85", "Forget")
 
@@ -990,7 +1010,7 @@ check(kinds() == "smart" and act, "a burst of Smart batches: one notice, whateve
 check(act.text:GetText() == L.ACTIVITY_RAISE, "Optimizing graphics, the tag kept out of the title: " .. act.text:GetText())
 check(act.sub:GetText() == "View distance 5 to 6   +4 more" and act.subIcon.atlas == "minimal-scrollbar-arrow-top", "the latest change, up, +4 more: " .. act.sub:GetText())
 check(act.third:GetText() == "75 / 75 fps |cff9e9e9e· " .. UI.SmartStyle() .. "|r" and act.item.shimmer, "fps against the target, the muted tag, the working line: " .. act.third:GetText())
-check(act.third.w >= #act.third:GetText():gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "") * 6 and act.third.w <= 320 - 2 * 28 - 2 * 12, "the fps line is as wide as its words, not cut short")
+check(act.third.w >= act.third:GetStringWidth() and act.third.w <= 264 - 2 * 12, "the fps line is as wide as its words, not cut short")
 local goal0, pace0 = ns.db.smart.goal, ns.db.smart.pace
 ns.db.smart.goal, ns.db.smart.pace = "balanced", "balanced"
 check(UI.SmartStyle() == "Balanced", "the same goal and pace name shows once: " .. UI.SmartStyle())
@@ -1118,6 +1138,16 @@ local offer = UI.Current()
 check(offer and offer ~= main and offer.text:GetText() == L.RESUME_TEXT, "resume offered after combat")
 W.press(offer, "PAD1")
 check(UI.Current() == main and main:IsShown(), "resume reopens the window")
+-- No text is cut on any page at the default scale (W.truncated measures as the store screenshots did).
+for _, key in ipairs({ "overview", "profiles", "profile", "locations", "smart", "general" }) do
+	UI.OpenPanel(key, key == "profile" and "p1" or nil)
+	W.advance(1.1)
+	local cut = W.truncated()
+	check(#cut == 0, key .. ": no text cut: " .. table.concat(cut, "; "))
+end
+open("general")
+local announce = labelled(L.ANNOUNCE).region
+check(announce.control.x == 340 and announce.label.w == 293 and labelled(L.CONTROLS).region.choice.x == 340, "Options: one control column at 340, labels up to it")
 UI.CloseAll()
 
 -- No Smart.lua: the Smart tab says so.

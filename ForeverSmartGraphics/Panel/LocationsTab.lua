@@ -9,7 +9,7 @@ local L = UI.L
 local N = UI.N
 
 -- The table's columns, from the row's left: label 150 wide, Profile at 192 (box 170), Smart goal at 418 (box 150).
-local LABEL_W, PROFILE_X, PROFILE_W, STYLE_X, STYLE_W, CAPTION_PROFILE_X, CAPTION_STYLE_X = 150, 192, 170, 418, 150, 222, 448
+local LABEL_W, PROFILE_X, PROFILE_W, STYLE_X, STYLE_W, CAPTION_PROFILE_X, CAPTION_STYLE_X = 150, 192, 170, 410, 168, 222, 440
 
 local window, page
 
@@ -201,7 +201,9 @@ local function build(content, win)
 		page.typeRows[i] = row
 	end
 	page.placeSection = UI.Section(content, L.PLACES)
-	caption(page.placeSection, L.COLUMN_PROFILE, CAPTION_PROFILE_X)
+	-- Over the place rows, under the line that explains them; only with rows.
+	page.placeCaption = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	page.placeCaption:SetText(L.COLUMN_PROFILE)
 	page.placesWin = UI.Description(content, "GameFontDisableSmall")
 	page.placesWin:SetText(L.PLACES_WIN)
 	page.empty = UI.Description(content, "GameFontDisable")
@@ -263,6 +265,7 @@ local function refreshPage(content)
 	flow:Add(content.placesWin, 14, N.ROW_GAP, N.LABEL_X)
 	local items = placeItems()
 	local placeOptions = choices(true)
+	if #items > 0 then flow:Add(content.placeCaption, 12, 2, CAPTION_PROFILE_X) end
 	for i, item in ipairs(items) do
 		local row, key = placeRow(i), item.key
 		local at = indexOf(placeOptions, item.profile)

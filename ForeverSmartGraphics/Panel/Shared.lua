@@ -151,7 +151,9 @@ UI.L = {
 	IN_USE = "In use here now",
 	USED_IN = "Used in %s",
 	NOT_USED = "Not used anywhere",
-	EVERY_OTHER = "every place without a profile of its own",
+	USED_BY_DEFAULT = "Used everywhere without its own profile",
+	USED_COUNT = "Used in %d places",
+	USED_COUNT_ONE = "Used in 1 place",
 	OWN_COUNT = "%d settings of its own, the rest follow Default",
 	OWN_NONE = "follows Default",
 	PRESET_NAMED = "%s preset",
@@ -179,7 +181,8 @@ UI.L = {
 	REMOVE_TIP = "This place goes back to its location type's profile.",
 	SMART_INTRO = "Smart mode starts from the profile of the place you are in, then lowers or raises settings to hold your target FPS with the best picture it can.",
 	RIGHT_NOW = "Right now",
-	NOW_LINE = "%s · %d fps, goal %d · %s · %s",
+	NOW_LINE = "%s · %s fps, goal %d%s · %s · %s",
+	NOW_CEILING = " (display tops out at %d)",
 	BEFORE_THAT = "Before that: %s",
 	SMART_OFF_LINE = "Smart mode is off. Profiles are used exactly as set.",
 	LEARNED_FOLD = "What it learned",
@@ -207,7 +210,7 @@ UI.L = {
 	HEADER_SMART = " · Smart: %s",
 	HEADER_MODE = " (%s)",
 	MODE_LINE = "%s: %s",
-	MODE_DEFAULT = "Default (%s)",
+	MODE_DEFAULT = "Default: %s",
 	MODE_OFF_TIP = "Used when Smart mode is on.",
 	HEADER_OFF = " · Switching off",
 	UNKNOWN_PLACE = "Unknown place",
@@ -292,7 +295,7 @@ UI.L = {
 	PRE_ADJUSTED = "Pre-adjusted for %s",
 	PRE_ADJUSTED_SHORT = "Pre-adjusted",
 	LAGGED = "Places that lagged",
-	LAG_ROW = "avg %d fps · low %d · below target %d%% of the time",
+	LAG_ROW = "avg %d · low %d fps · %d%% under target",
 	LAG_FIGHTS = " · fights -%d%%",
 	LAG_TIP = "Smart mode lowers settings here ahead of time, before the frame rate drops.",
 	NO_LAGGED = "Nothing yet. Play a while with Smart mode on.",
@@ -907,10 +910,13 @@ local tooltip
 local TIP_PAD, TIP_GAP, ACTION_GLYPH, TIP_TEXT_W = 10, 2, 18, 300
 local TIP_WHITE = { 1, 1, 1 }
 
+-- A FontString's whole text width, not the width it is cut to.
+function UI.TextWidth(fs) return fs.GetUnboundedStringWidth and fs:GetUnboundedStringWidth() or fs:GetStringWidth() end
+
 local function tipText(fs, text)
 	fs:SetWidth(TIP_TEXT_W)
 	fs:SetText(text)
-	local full = fs.GetUnboundedStringWidth and fs:GetUnboundedStringWidth() or fs:GetStringWidth()
+	local full = UI.TextWidth(fs)
 	fs:SetWidth(math.min(full or TIP_TEXT_W, TIP_TEXT_W) + 1)
 	return fs:GetWidth()
 end
@@ -1058,6 +1064,8 @@ local function dropButton(holder, parent, width)
 	holder.text:SetPoint("RIGHT", holder.arrow, "LEFT", -2, 0)
 	holder.text:SetJustifyH("LEFT")
 	holder.text:SetWordWrap(false)
+	-- The width its two anchors give it, beside the arrow (about 26).
+	holder.text:SetWidth(width - 36)
 	holder.button = button
 	function holder.Paint()
 		local state = holder.open and "-open" or (holder.focused or button:IsMouseOver()) and "-hover" or ""
@@ -1867,7 +1875,9 @@ end
 -- A settings row (SettingsListElementTemplate): label in GameFontNormal from x 37 to 85 left of centre, the white 10%
 -- hover background from 10 left of the row to 5 short of its right, the tooltip beside the label half. It is a button
 -- here so a click on the label acts (row.onClick, row.onRightClick); the focus shows the same background.
-function UI.SettingRow(parent, text)
+-- controlX: a page's own control column, from the row's left (its checkboxes and dropdowns there, the label up to it);
+-- without it the native column at the centre.
+function UI.SettingRow(parent, text, controlX)
 	local row = CreateFrame("Button", nil, parent)
 	row:SetSize(N.ROW_W, N.ROW_H)
 	for _, key in ipairs({ "hover", "wash" }) do
@@ -1882,13 +1892,14 @@ function UI.SettingRow(parent, text)
 	row:SetScript("OnLeave", function(self) self.hover:Hide() end)
 	row.label = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	row.label:SetPoint("LEFT", N.LABEL_X, 0)
-	row.label:SetWidth(N.CENTER + N.LABEL_END - N.LABEL_X)
+	row.controlX = controlX
+	row.label:SetWidth((controlX and controlX - 10 or N.CENTER + N.LABEL_END) - N.LABEL_X)
 	row.label:SetJustifyH("LEFT")
 	row.label:SetWordWrap(false)
 	row.label:SetText(text or "")
 	row.tipAnchor = CreateFrame("Frame", nil, row)
 	row.tipAnchor:SetPoint("TOPLEFT")
-	row.tipAnchor:SetSize(N.CENTER - N.TIP_CUT, N.ROW_H)
+	row.tipAnchor:SetSize(controlX and controlX - 10 or N.CENTER - N.TIP_CUT, N.ROW_H)
 	row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	row:SetScript("OnClick", UI.RowClick)
 	return row
@@ -1896,7 +1907,7 @@ end
 
 function UI.RowCheckbox(row, onClick)
 	row.control = UI.Checkbox(row, onClick)
-	row.control:SetPoint("LEFT", row, "CENTER", N.CHECK_X, 0)
+	if row.controlX then row.control:SetPoint("LEFT", row, "LEFT", row.controlX, 0) else row.control:SetPoint("LEFT", row, "CENTER", N.CHECK_X, 0) end
 	return row.control
 end
 
@@ -1910,8 +1921,9 @@ end
 -- x and width place a second (or narrower) dropdown in the row: its left edge x from the row's left, its box width.
 function UI.RowChoice(row, onStep, onOpen, x, width)
 	local choice = UI.Choice(row, width or N.DROP_W, onStep, onOpen)
+	x = x or row.controlX
 	if x then choice:SetPoint("LEFT", row, "LEFT", x, 3) else choice:SetPoint("LEFT", row, "CENTER", N.DROP_X, 3) end
-	if not x then row.choice, row.control = choice, choice end
+	if not x or x == row.controlX then row.choice, row.control = choice, choice end
 	return choice
 end
 

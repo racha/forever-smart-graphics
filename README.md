@@ -4,7 +4,7 @@ Graphics profiles for WoW Forever that switch by where you are, and a Smart mode
 
 [CurseForge](https://www.curseforge.com/wow/addons/forever-smart-graphics) · [Releases](https://github.com/racha/forever-smart-graphics/releases) · [Issues](https://github.com/racha/forever-smart-graphics/issues)
 
-> **Beta.** Smart mode was rebuilt for this release and is still being tested in game. Please report what you see.
+> **Beta.** This is a test release. Please try it and report anything odd you see.
 
 ## What it does
 
@@ -56,6 +56,6 @@ Get it from CurseForge, or download the zip from Releases and unzip it into `Wor
 
 ## About
 
-This addon was designed by HouseLegend and written with [Claude Code](https://claude.com/claude-code), Anthropic's AI coding assistant. Changes are reviewed and tested in game; this beta is still being tested.
+This addon was designed by HouseLegend and written with [Claude Code](https://claude.com/claude-code), Anthropic's AI coding assistant.
 
 MIT licensed, see `LICENSE`.

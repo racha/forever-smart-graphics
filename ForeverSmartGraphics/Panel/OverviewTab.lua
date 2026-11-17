@@ -253,7 +253,24 @@ local function summaryText()
 	local count = 0
 	for _ in pairs(ns.db.overrides) do count = count + 1 end
 	if count > 0 then parts[#parts + 1] = count == 1 and L.SUMMARY_PLACE or string.format(L.SUMMARY_PLACES, count) end
-	return table.concat(parts, " · ")
+	return parts
+end
+
+-- The parts on as few lines as fit, broken only between parts: no separator ends a line.
+local function wrapParts(fs, parts)
+	local lines, line = {}, nil
+	for _, part in ipairs(parts) do
+		local candidate = line and line .. " · " .. part or part
+		fs:SetText(candidate)
+		if line and UI.TextWidth(fs) > fs:GetWidth() then
+			lines[#lines + 1] = line
+			line = part
+		else
+			line = candidate
+		end
+	end
+	lines[#lines + 1] = line
+	return table.concat(lines, "\n")
 end
 
 local function rowNode(row, select, tip, extra)
@@ -336,7 +353,7 @@ local function refreshPage(content)
 	end
 
 	flow:Add(content.locationSection, N.SECTION_H, 0)
-	content.summary:SetText(summaryText())
+	content.summary:SetText(wrapParts(content.summary, summaryText()))
 	flow:Add(content.summary, content.summary:GetStringHeight(), N.ROW_GAP, N.LABEL_X)
 	flow:Add(content.setUp, N.BUTTON_H)
 	nodes[#nodes + 1] = buttonNode(content.setUp.buttons[1], { title = L.SET_UP_LOCATIONS, lines = { L.SET_UP_LOCATIONS_TIP }, side = "right" })

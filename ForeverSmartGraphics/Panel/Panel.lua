@@ -12,7 +12,7 @@ local N = UI.N
 
 -- Ours on top of the native numbers: the status strip in the tab band, the action bar under the page title.
 -- The strip starts right of the round portrait (62 wide at -5): 62 instead of the tab band's 32.
-local STRIP_X, STRIP_Y, STRIP_H, STRIP_PAD, STRIP_RIGHT = 62, 27, 37, 8, 32
+local STRIP_X, STRIP_Y, STRIP_H, STRIP_PAD, STRIP_RIGHT, STRIP_VALUE_W = 62, 27, 37, 8, 32, 240
 local PORTRAIT = "Interface\\AddOns\\ForeverSmartGraphics\\Media\\portrait"
 local BAR_Y, BAR_H, HEADER_BAR_H, FLASH_FOR = 54, 22, 82, 4
 local METER_W, METER_H, METER_SPAN = 96, 7, 1.5
@@ -168,8 +168,11 @@ local function chevron(after)
 	return tex
 end
 
+-- The value keeps its whole text (up to STRIP_VALUE_W), so it never runs into the chevron after it.
 local function sizeSegment(seg)
-	seg:SetWidth(STRIP_PAD * 2 + seg.caption:GetStringWidth() + 6 + math.min(seg.value:GetStringWidth(), 170))
+	local value = math.min(UI.TextWidth(seg.value), STRIP_VALUE_W)
+	seg.value:SetWidth(value + 1)
+	seg:SetWidth(STRIP_PAD * 2 + UI.TextWidth(seg.caption) + 6 + value + 1)
 end
 
 local function hereTip()

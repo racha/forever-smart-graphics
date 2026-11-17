@@ -8,6 +8,9 @@ local L = UI.L
 local N = UI.N
 
 local window, page
+-- The page's control column, right of the native one, so its longest label ("Announce texture changes before they
+-- stutter") fits whole; the Controls dropdown starts there too.
+local CONTROL_X = 340
 
 -- Log setting changes in chat (options.chatLog): off unless true, as every notification.
 function UI.ChatLogOn() return ns.db.options.chatLog == true end
@@ -87,7 +90,7 @@ local DEBUG_ROW = 6
 
 local function checkRow(content, i)
 	local option = OPTIONS[i]
-	local row = UI.SettingRow(content, option[1])
+	local row = UI.SettingRow(content, option[1], CONTROL_X)
 	UI.RowCheckbox(row, function() toggle(i) end)
 	row.onClick = function() toggle(i) end
 	content.rows[i] = row
@@ -98,7 +101,7 @@ local function build(content, win)
 	window, page = win, content
 	page.flow = UI.Flow(content)
 	page.controlsSection = UI.Section(content, L.SECTION_CONTROLS)
-	page.controls = UI.SettingRow(content, L.CONTROLS)
+	page.controls = UI.SettingRow(content, L.CONTROLS, CONTROL_X)
 	UI.RowChoice(page.controls, stepInput, openInput)
 	page.controls.onClick = openInput
 	page.rows, page.sections = {}, {}

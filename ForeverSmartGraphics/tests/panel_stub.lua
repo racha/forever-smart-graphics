@@ -168,7 +168,10 @@ end
 function Obj:SetText(t) self.text = t or "" end
 function Obj:GetText() return self.text end
 function Obj:GetStringHeight() return 14 end
-function Obj:GetStringWidth() return #(self.text or "") * 6 end
+-- Text width as the store screenshots measured it: about 6.5 per character in the 12 pt fonts and 5.5 in the small
+-- ones, colour codes not counted.
+local function measured(fs, text) return #text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "") * ((fs.font or ""):find("Small") and 5.5 or 6.5) end
+function Obj:GetStringWidth() return measured(self, self.text or "") end
 function Obj:GetTextWidth() return #(self.text or "") * 6 end
 function Obj:SetColorTexture(r, g, b, a) self.color = { r, g, b, a } end
 function Obj:SetGradient(orientation, from, to) self.gradient = { orientation = orientation, from = from, to = to } end
@@ -191,7 +194,28 @@ function Obj:GetFrameStrata() return self.strata or (self.parent and self.parent
 function Obj:CreateTexture() return new("Texture", self) end
 function Obj:CreateMaskTexture() return new("Mask", self) end
 function Obj:AddMaskTexture(m) self.masks = self.masks or {}; table.insert(self.masks, m) end
-function Obj:CreateFontString(_, _, font) local fs = new("FontString", self); fs.font = font; return fs end
+function Obj:CreateFontString(_, _, font)
+	local fs = new("FontString", self)
+	fs.font = font
+	self.fontStrings = self.fontStrings or {}
+	table.insert(self.fontStrings, fs)
+	return fs
+end
+function Obj:SetWordWrap(on) self.wordWrap = on end
+-- Every shown one-line FontString on a visible frame whose words are wider than the width it was given: what the
+-- game would cut with "...".
+function W.truncated()
+	local cut = {}
+	for _, f in ipairs(W.frames) do
+		if f:IsVisible() then
+			for _, fs in ipairs(f.fontStrings or {}) do
+				local text, width = fs.text or "", fs:GetStringWidth()
+				if fs.shown and fs.wordWrap == false and fs.w > 0 and width > fs.w + 1 then cut[#cut + 1] = text .. " (" .. width .. " > " .. fs.w .. ")" end
+			end
+		end
+	end
+	return cut
+end
 function Obj:SetAtlas(a) self.atlas = a end
 function Obj:SetTexture(t) self.texture = t end
 function Obj:SetVertexColor(r, g, b, a) self.vertexColor = { r, g, b, a } end

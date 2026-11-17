@@ -10,7 +10,7 @@ local N = UI.N
 
 local TARGET_MIN, TARGET_MAX, TARGET_STEP = 20, 240, 5
 local FLOOR_MIN, FLOOR_MAX, FLOOR_STEP = 33, 100, 5
-local LINE_H, LAG_SHOWN, FIGHT_DROP, FINISH_AFTER, DETAIL_W = 18, 10, 0.1, 30, 230
+local LINE_H, LAG_SHOWN, FIGHT_DROP, FINISH_AFTER = 18, 10, 0.1, 30
 local LEARNED_X, LAG_X, HISTORY = 192, 222, 3
 
 local window, page
@@ -78,10 +78,11 @@ local function listRow(content, labels, x)
 	local row = UI.SettingRow(content)
 	row.detail = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 	row.detail:SetPoint("LEFT", row, "LEFT", x, 0)
-	row.detail:SetWidth(DETAIL_W)
 	row.detail:SetJustifyH("LEFT")
 	row.detail:SetWordWrap(false)
-	UI.RowButtons(row, labels)
+	local used = 8
+	for _, button in ipairs(UI.RowButtons(row, labels)) do used = used + button:GetWidth() + 6 end
+	row.detail:SetWidth(N.ROW_W - x - used - 4)
 	return row
 end
 
@@ -154,7 +155,9 @@ local function tick()
 	local lines = page.lines
 	local goal = state.goal or (state.cap and math.min(state.target or target(), state.cap)) or state.target or target()
 	local loc = ns.Location.Current() or {}
-	lines[1]:SetText(string.format(L.NOW_LINE, (UI.SmartStatus(state):gsub("^%l", string.upper)), math.floor((state.fps or 0) + 0.5), goal, ns.Location.LABELS[loc.key] or L.UNKNOWN_PLACE, UI.SmartStyle()))
+	local fps = state.fps and tostring(math.floor(state.fps + 0.5)) or "--"
+	local ceiling = state.ceiling and string.format(L.NOW_CEILING, math.floor(state.ceiling + 0.5)) or ""
+	lines[1]:SetText(string.format(L.NOW_LINE, (UI.SmartStatus(state):gsub("^%l", string.upper)), fps, goal, ceiling, ns.Location.LABELS[loc.key] or L.UNKNOWN_PLACE, UI.SmartStyle()))
 	lines[2]:SetText(state.cap and string.format(L.CAP, state.cap) or "")
 	local text = UI.ChangeText(state.last)
 	lines[3]:SetText(text and string.format(L.LAST, text) or L.NO_LAST)
