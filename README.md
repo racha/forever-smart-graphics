@@ -6,6 +6,8 @@ Graphics profiles for WoW Forever that switch by where you are, and a Smart mode
 
 > **Beta.** This is a test release. Please try it and report anything odd you see.
 
+![Forever Smart Graphics](site/img/store/00-overview.jpg)
+
 ## What it does
 
 - **Smart mode**: pick a target FPS and leave it on. It lowers the settings you notice least first, never touches the ones that gain nothing on your machine, and raises quality again when there is room.
@@ -21,6 +23,18 @@ Graphics profiles for WoW Forever that switch by where you are, and a Smart mode
 - **Restore**: puts back the exact settings you had before the addon, any time.
 
 Each setting shows what it does and how much FPS it costs. The window works with mouse, keyboard and gamepad.
+
+## How Smart mode works
+
+![How Smart mode works](site/img/store/10-how-smart-mode-works.jpg)
+
+![Two settings: Goal and Pace](site/img/store/11-goal-and-pace.jpg)
+
+![The right settings for every place](site/img/store/12-profiles-by-location.jpg)
+
+![Find my best settings](site/img/store/13-find-my-best-settings.jpg)
+
+![Calm by design](site/img/store/14-calm-by-design.jpg)
 
 ## Install
 
