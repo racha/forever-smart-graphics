@@ -1,6 +1,10 @@
 # Forever Smart Graphics
 
-Graphics profiles for WoW Forever that switch by where you are, and a Smart mode that keeps the best-looking picture your machine can hold at your target FPS.
+Smart graphics that adjust themselves: maximum fidelity at your target FPS, zone by zone.
+
+**Stop tweaking graphics settings.** Tell Forever Smart Graphics the FPS you want, and it automatically tunes your game for the best picture your machine can hold. It gets sharper when there's room and lighter when things get heavy, and it never changes anything mid-fight.
+
+Prefer full control? Build your own profiles and have them switch by themselves in cities, dungeons, raids and battlegrounds.
 
 [CurseForge](https://www.curseforge.com/wow/addons/forever-smart-graphics) · [Releases](https://github.com/racha/forever-smart-graphics/releases) · [Issues](https://github.com/racha/forever-smart-graphics/issues)
 

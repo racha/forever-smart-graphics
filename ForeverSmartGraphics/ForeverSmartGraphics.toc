@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: Forever Smart Graphics
-## Notes: Graphics profiles that switch by location, and a Smart mode that holds your target FPS.
+## Notes: Smart graphics that adjust themselves: maximum fidelity at your target FPS, zone by zone.
 ## Author: HouseLegend
 ## Version: @project-version@
 ## SavedVariables: ForeverSmartGraphicsDB
