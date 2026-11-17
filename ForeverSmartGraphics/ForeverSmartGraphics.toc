@@ -1,0 +1,32 @@
+## Interface: 16001
+## Title: Forever Smart Graphics
+## Notes: Graphics profiles that switch by location, and a Smart mode that holds your target FPS.
+## Author: HouseLegend
+## Version: @project-version@
+## SavedVariables: ForeverSmartGraphicsDB
+## IconTexture: Interface\AddOns\ForeverSmartGraphics\Media\logo
+## Category: User Interface
+## X-License: MIT
+## X-Curse-Project-ID: CURSEFORGE_PROJECT_ID
+## AddonCompartmentFunc: ForeverSmartGraphics_OnCompartmentClick
+## AddonCompartmentFuncOnEnter: ForeverSmartGraphics_OnCompartmentEnter
+## AddonCompartmentFuncOnLeave: ForeverSmartGraphics_OnCompartmentLeave
+
+Core.lua
+Catalog.lua
+Profiles.lua
+Location.lua
+Apply.lua
+Smart.lua
+Calibrate.lua
+Panel/Templates.xml
+Panel/Shared.lua
+Panel/Window.lua
+Panel/ProfilesTab.lua
+Panel/LocationsTab.lua
+Panel/SmartTab.lua
+Panel/GeneralTab.lua
+Panel/OverviewTab.lua
+Panel/Toast.lua
+Panel/Calibrate.lua
+Panel/Panel.lua
