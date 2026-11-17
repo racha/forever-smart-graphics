@@ -7,7 +7,7 @@
 ## IconTexture: Interface\AddOns\ForeverSmartGraphics\Media\logo
 ## Category: User Interface
 ## X-License: MIT
-## X-Curse-Project-ID: CURSEFORGE_PROJECT_ID
+## X-Curse-Project-ID: 1812448
 ## AddonCompartmentFunc: ForeverSmartGraphics_OnCompartmentClick
 ## AddonCompartmentFuncOnEnter: ForeverSmartGraphics_OnCompartmentEnter
 ## AddonCompartmentFuncOnLeave: ForeverSmartGraphics_OnCompartmentLeave
