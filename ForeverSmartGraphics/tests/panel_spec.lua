@@ -205,7 +205,7 @@ local function stubNS(withSmart)
 		}
 	end
 	ns.areas = {
-		{ key = "map:85", name = "Orgrimmar", locKey = "city", fps = 52, minFps = 31, lagShare = 0.4, seconds = 600, combatDrop = 0.25 },
+		{ key = "map:85", name = "Orgrimmar", locKey = "city", fps = 52, minFps = 31, lagShare = 0.4, seconds = 600, combatDrop = 0.25, learned = true, t = 1700000000 },
 		{ key = "map:1", name = "Durotar", locKey = "outdoor", fps = 64, minFps = 50, lagShare = 0.12, seconds = 300 },
 	}
 	if withSmart then
@@ -626,7 +626,7 @@ local learnedFold = nodeWhere(function(n) return n.foldKey == "learned" end)
 check(learnedFold and learnedFold.region.count:GetText() == "1 locations" and labelled("City") == nil, "What it learned starts folded")
 learnedFold.region:Click()
 local learnedRow = labelled("City")
-check(learnedRow.region.buttons[1]:GetText() == L.SAVE_PROFILE and learnedRow.region.detail:GetText():find("^3 samples"), "learned row: samples, Save as profile, Reset")
+check(learnedRow.region.buttons[1]:GetText() == L.SAVE_PROFILE and learnedRow.region.detail:GetText():find("^1 zone "), "learned row: zones, Save as profile, Reset")
 learnedRow.region.buttons[2]:Click()
 check(last(ns, "ResetLearning")[2] == "city", "Reset")
 labelled("City").region.buttons[1]:Click()

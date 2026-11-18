@@ -173,12 +173,20 @@ local function age(t)
 	return string.format(L.AGE_DAYS, math.floor(seconds / 86400))
 end
 
+-- Smart remembers a settled position per zone; the list groups them by location type, which is what Save as profile
+-- and Reset act on.
 local function learnedItems()
-	local items = {}
-	for key, entry in pairs(ns.db.smart.learned) do
-		local samples = 0
-		for _, gain in pairs(entry.gains or {}) do samples = samples + (gain.n or 0) end
-		items[#items + 1] = { key = key, label = UI.PlaceLabel(key), samples = samples, t = entry.t }
+	local items, byKey = {}, {}
+	for _, area in ipairs(Smart.Areas and Smart.Areas() or {}) do
+		local locKey = area.locKey
+		if area.learned and locKey then
+			local item = byKey[locKey]
+			if not item then
+				item = { key = locKey, label = UI.PlaceLabel(locKey), zones = 0, t = 0 }
+				byKey[locKey], items[#items + 1] = item, item
+			end
+			item.zones, item.t = item.zones + 1, math.max(item.t, area.t or 0)
+		end
 	end
 	table.sort(items, function(a, b) return a.label < b.label end)
 	return items
@@ -283,7 +291,7 @@ local function refreshPage(content)
 			local row = pooled(content.learnedRows, i, { L.SAVE_PROFILE, L.RESET }, LEARNED_X)
 			flow:Add(row, N.ROW_H)
 			row.label:SetText(item.label)
-			row.detail:SetText(string.format(L.LEARNED_ROW, item.samples, (item.t or 0) > 0 and age(item.t) or "-"))
+			row.detail:SetText(string.format(item.zones == 1 and L.LEARNED_ROW_ONE or L.LEARNED_ROW, item.zones, item.t > 0 and age(item.t) or "-"))
 			row.onClick = function() saveAsProfile(item) end
 			row.onRightClick = function() resetOne(item) end
 			row.buttons[1].action, row.buttons[2].action = row.onClick, row.onRightClick

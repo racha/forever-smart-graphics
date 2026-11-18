@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.0-beta.2 — 2026-11-19
+
+- Fixed: "What it learned" on the Smart page always showed nothing. It now lists what Smart mode remembers, grouped by kind of place, with Save as profile and Reset.
+- Fixed: labels cut off on the Options, Locations and Profiles pages at the default window size.
+- The Smart page shows the FPS it is holding when your display tops out below your target.
+- The status strip at the top of the window fits its text.
+
 ## 1.0.0-beta.1 — 2026-11-17
 
 First public beta.

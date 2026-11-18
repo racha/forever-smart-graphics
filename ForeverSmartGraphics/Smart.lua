@@ -17,7 +17,8 @@
 --   ResetLearning(locKey)   nil = every zone and the machine-wide gains
 --   Adjust(locKey, values)  copy of values at this zone's rung position (Apply.Target calls it)
 --   SaveAsProfile(locKey, name) -> new profile id
---   Areas()                 { { key, name, locKey, fps, minFps, lagShare, seconds, combatDrop }, ... } worst lag first
+--   Areas()                 { { key, name, locKey, fps, minFps, lagShare, seconds, combatDrop, learned, t }, ... } worst lag
+--                           first; learned = the zone holds a settled position
 --   ForgetArea(key)
 --   Suggestion(), DismissSuggestion(key), SetSuggest(on)   the lag notice while smart mode is off
 --   AdjustPlace(key), AdjustState(), CancelAdjust()         one-place search down the ladder, saved as an override
@@ -1577,7 +1578,7 @@ function Smart.Areas()
 		local seconds = a.seconds or 0
 		local combatDrop = a.combatFps and a.calmFps and a.calmFps > 0 and 1 - a.combatFps / a.calmFps or nil
 		local lagShare = seconds > 0 and (a.below or 0) / seconds or 0
-		out[#out + 1] = { key = key, name = a.name or key, locKey = a.locKey, fps = a.fps, minFps = a.minFps, lagShare = lagShare, seconds = seconds, combatDrop = combatDrop }
+		out[#out + 1] = { key = key, name = a.name or key, locKey = a.locKey, fps = a.fps, minFps = a.minFps, lagShare = lagShare, seconds = seconds, combatDrop = combatDrop, learned = tonumber(a.pos) ~= nil, t = a.t }
 	end
 	table.sort(out, function(x, y)
 		if x.lagShare ~= y.lagShare then return x.lagShare > y.lagShare end
