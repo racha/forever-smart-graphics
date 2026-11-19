@@ -5,7 +5,7 @@
 local here = (arg and arg[0] or ""):match("^(.*)[/\\]") or "."
 local dir = here .. "/.."
 local W = dofile(here .. "/panel_stub.lua")
-local FILES = { "Panel/Shared.lua", "Panel/Window.lua", "Panel/ProfilesTab.lua", "Panel/LocationsTab.lua", "Panel/SmartTab.lua", "Panel/GeneralTab.lua", "Panel/OverviewTab.lua", "Panel/Toast.lua", "Panel/Calibrate.lua", "Panel/Panel.lua" }
+local FILES = { "Panel/Shared.lua", "Panel/Window.lua", "Panel/ProfilesTab.lua", "Panel/LocationsTab.lua", "Panel/SmartTab.lua", "Panel/GeneralTab.lua", "Panel/OverviewTab.lua", "Panel/Toast.lua", "Panel/Calibrate.lua", "Panel/WhatsNew.lua", "Panel/Panel.lua" }
 
 local checks = 0
 local function check(ok, msg)
@@ -27,6 +27,21 @@ local function stubNS(withSmart)
 	function ns.log(msg) W.log[#W.log + 1] = msg end
 	function ns.plain(v) return v end
 	function ns.TogglePanel() end
+	function ns.InCombat() return W.combat end
+	-- The news contract over a fake state the spec sets; Close records what it was given.
+	local news = {}
+	ns.news = news
+	ns.News = {
+		Running = function() return news.running end,
+		Pending = function() return news.pending end,
+		Current = function() return news.current end,
+		Website = function() return news.website end,
+		Close = function(never)
+			call("NewsClose", never)
+			news.pending = nil
+			if never == true then news.never = true end
+		end,
+	}
 
 	ns.db = {
 		options = { switching = true, debug = false, minimap = { shown = true, angle = 200 } },
@@ -112,6 +127,17 @@ local function stubNS(withSmart)
 		return list
 	end
 	function P.Get(id) return db.profiles[id] end
+	-- The hold contract: one profile everywhere until released; refused while switching is off.
+	function P.Hold(id)
+		call("Hold", id)
+		if db.options.switching == false or (id and not db.profiles[id]) then return false end
+		if db.held == id then return true end
+		local previous = db.held
+		db.held = id
+		ns.Fire("FSG_PROFILES_CHANGED", id or previous)
+		return true
+	end
+	function P.Held() return db.held and db.profiles[db.held] and db.held or nil end
 	function P.Create(name, values)
 		local id = "p" .. db.nextId
 		db.nextId = db.nextId + 1
@@ -153,10 +179,18 @@ local function stubNS(withSmart)
 		KEYS = KEYS,
 		LABELS = { city = "City", outdoor = "Open world", dungeon = "Dungeon", raid = "Raid", battleground = "Battleground", arena = "Arena" },
 		Current = function() return loc end,
-		ProfileFor = function() return "p1", "type" end,
+		ProfileFor = function(l, assigned)
+			call("ProfileFor", l, assigned)
+			if db.held and not assigned then return db.held, "held" end
+			return "p1", "type"
+		end,
 	}
 	ns.Apply = {
-		Active = function() return ns.activeOverride or { loc = loc, profileId = "p1", profileName = "City", source = "type" } end,
+		Active = function()
+			if ns.activeOverride then return ns.activeOverride end
+			if db.held then return { loc = loc, profileId = db.held, profileName = db.profiles[db.held].name, source = "held" } end
+			return { loc = loc, profileId = "p1", profileName = "City", source = "type" }
+		end,
 		SetSwitching = function(on) call("SetSwitching", on) db.options.switching = on end,
 		RestoreOriginal = function() call("RestoreOriginal") end,
 		ApplyPending = function(...) call("ApplyPending", ...) end,
@@ -593,7 +627,7 @@ ns.db.overrides["map:84"] = { profile = "p1", name = "Stormwind City" }
 main:Refresh()
 local add = buttonNode(string.format(L.ADD_THIS_PLACE, "Stormwind Keep"))
 add.region:Click()
-check(last(ns, "SetOverride")[2] == "map:1453", "Add this place")
+check(last(ns, "SetOverride")[2] == "map:1453" and last(ns, "ProfileFor")[3] == true, "Add this place, from its own assignment")
 ns.db.overrides["map:1453"] = nil
 labelled(L.SWITCHING).region:Click()
 check(last(ns, "SetSwitching")[2] == false and labelled("City") == nil, "switching off greys the table")
@@ -1138,6 +1172,42 @@ local offer = UI.Current()
 check(offer and offer ~= main and offer.text:GetText() == L.RESUME_TEXT, "resume offered after combat")
 W.press(offer, "PAD1")
 check(UI.Current() == main and main:IsShown(), "resume reopens the window")
+-- A profile held by a macro: the why line, the Overview banner with Back to automatic, the strip and the minimap
+-- tooltip say so; without a hold none of it shows.
+local function readoutTip()
+	ForeverSmartGraphicsMinimapFps:Fire("OnEnter")
+	local lines = {}
+	for _, fs in ipairs(tooltipFrame().lines) do if fs:IsShown() then lines[#lines + 1] = fs:GetText() end end
+	ForeverSmartGraphicsMinimapFps:Fire("OnLeave")
+	return table.concat(lines, "\n")
+end
+ns.db.options.minimapFps = true
+UI.UpdateMinimapFps()
+UI.OpenPanel("overview")
+local overview = labelled(L.SMART).region:GetParent()
+check(UI.WhyLine() == string.format(L.WHY_TYPE, "City", "City") and strip.profile.value:GetText() == "City", "not held: the usual why line and profile")
+check(not (overview.banner:IsShown() and overview.banner.buttons[1]:GetText() == L.HOLD_RELEASE) and not readoutTip():find("(held)", 1, true), "not held: no banner, no (held) in the minimap tooltip")
+local longName = "Raid night with every shadow on!"
+check(#longName == 32, "a 32-letter name")
+ns.db.profiles.long = { id = "long", name = longName, values = {} }
+local cityBefore, placesBefore = ns.db.locations.city, ns.db.overrides
+check(ns.Profiles.Hold("long"), "a macro holds it")
+main:Refresh()
+W.advance(1.1)
+check(UI.WhyLine() == string.format(L.WHY_HELD, longName), "held: the why line says so: " .. UI.WhyLine())
+check(strip.profile.value:GetText() == longName .. " (held)", "held: the strip's profile ends in (held)")
+check(overview.banner:IsShown() and overview.banner.text:GetText() == string.format(L.WHY_HELD, longName) and overview.banner.buttons[1]:GetText() == "Back to automatic", "held: the Overview banner with Back to automatic")
+check(readoutTip():find(longName .. " (held)", 1, true), "held: the minimap tooltip's profile ends in (held)")
+for _, kind in ipairs({ "profile", "smart", "done" }) do UI.Notify.Hide(kind) end
+local cutHeld = W.truncated()
+check(#cutHeld == 0, "held with a 32-letter name: nothing cut in the window: " .. table.concat(cutHeld, "; "))
+check(ns.db.locations.city == cityBefore and ns.db.overrides == placesBefore and ns.db.overrides["map:84"].profile == "p1", "the hold leaves the assignments alone")
+overview.banner.buttons[1]:Click()
+check(last(ns, "Hold")[2] == nil and ns.Profiles.Held() == nil and not (overview.banner:IsShown() and overview.banner.buttons[1]:GetText() == L.HOLD_RELEASE), "Back to automatic releases the hold")
+check(strip.profile.value:GetText() == "City" and UI.WhyLine() == string.format(L.WHY_TYPE, "City", "City"), "and the strip and why line go back")
+ns.db.profiles.long = nil
+UI.CloseAll()
+
 -- No text is cut on any page at the default scale (W.truncated measures as the store screenshots did).
 for _, key in ipairs({ "overview", "profiles", "profile", "locations", "smart", "general" }) do
 	UI.OpenPanel(key, key == "profile" and "p1" or nil)
@@ -1149,6 +1219,226 @@ open("general")
 local announce = labelled(L.ANNOUNCE).region
 check(announce.control.x == 340 and announce.label.w == 293 and labelled(L.CONTROLS).region.choice.x == 340, "Options: one control column at 340, labels up to it")
 UI.CloseAll()
+
+-- What's new: opens on its own once after an update through the gates and one ticker; only the close action stores.
+do
+	local nn = stubNS(true)
+	local UIn = load(nn)
+	local Ln = UIn.L
+	assert(loadfile(dir .. "/tests/news_fixture.lua"))("ForeverSmartGraphics", nn)
+	local NEWS, news = nn.NEWS, nn.news
+	news.running, news.website = "1.0.0", "https://github.com/owner/forever-smart-graphics"
+	news.pending = { entries = { NEWS[1], NEWS[2] }, older = true, from = "1.0.0-beta.1" }
+	-- Tickers other files started before this point are not counted.
+	local others = {}
+	for _, t in ipairs(W.timers) do if t.ticker then others[t] = true end end
+	local function liveTickers()
+		local n = 0
+		for _, t in ipairs(W.timers) do if t.ticker and not t.cancelled and not others[t] then n = n + 1 end end
+		return n
+	end
+	local function shown() local win = UIn.WhatsNew() return win and win:IsShown() and UIn.Current() == win end
+	local function closes() local n = 0 for _, c in ipairs(nn.calls) do if c[1] == "NewsClose" then n = n + 1 end end return n end
+
+	W.advance(5)
+	check(not shown() and liveTickers() == 0, "news: nothing before the first PLAYER_ENTERING_WORLD")
+	nn.Fire("LOADING_SCREEN_ENABLED")
+	nn.Fire("PLAYER_ENTERING_WORLD")
+	W.advance(2.9)
+	check(not shown() and liveTickers() == 0, "news: the first check waits 3 s")
+	W.advance(0.2)
+	check(not shown() and liveTickers() == 1, "news: a loading screen holds it, one ticker waits")
+	nn.Fire("LOADING_SCREEN_DISABLED")
+	W.combat = true
+	W.advance(2.1)
+	check(not shown(), "news: combat holds it")
+	W.combat = false
+	UIn.OpenPanel("overview")
+	W.advance(2.1)
+	check(not shown() and UIn.Current() == UIn.Main(), "news: another window of ours holds it")
+	UIn.CloseAll()
+	nn.cal.running = true
+	W.advance(2.1)
+	check(not shown(), "news: a Find my best settings run holds it")
+	nn.cal.running = false
+	IsOnlyCoreBindingSetActive = function() return false end
+	W.advance(2.1)
+	check(not shown(), "news: a busy pad holds it")
+	IsOnlyCoreBindingSetActive = function() error("missing") end
+	nn.Fire("PLAYER_ENTERING_WORLD")
+	check(liveTickers() == 1, "news: a later PLAYER_ENTERING_WORLD arms nothing more")
+	W.advance(2.1)
+	IsOnlyCoreBindingSetActive = nil
+	local win = UIn.WhatsNew()
+	check(shown() and liveTickers() == 0, "news: all gates open, it shows and the ticker is gone")
+
+	-- The window per the kit.
+	check(win.w == 560 and win.h == 520 and win.strata == "FULLSCREEN_DIALOG" and win.scale == 1, "news: 560 x 520, FULLSCREEN_DIALOG, full scale on a big screen")
+	check(win.NineSlice.Text:GetText() == "Forever Smart Graphics · What's new", "news: title")
+	check(win.portrait.texture == "Interface\\AddOns\\ForeverSmartGraphics\\Media\\portrait" and win.portrait.w == 62, "news: the round portrait")
+	check(win.glow.x == -20 and win.glow.y == 24, "news: the large portrait focus glow's offsets")
+	check(win.Bg.alpha == 0.75 and not win.underlay:IsShown() and win:GetAlpha() == 1 and win.NineSlice:GetAlpha() == 1 and win.portrait:GetAlpha() == 1, "news: body at 0.75 without the underlay, frame and portrait at 1")
+	check(win.version:GetText() == "Version 1.0.0 · updated from 1.0.0-beta.1" and win.version.x == 62 and win.version.y == -31, "news: the version line names the old version")
+	check(win.row.point == "TOPRIGHT" and win.row.x == -24 and win.row.y == -24 and win.row.w == 176 and win.row.h == 29, "news: the checkbox row top right")
+	check(not win.ticked and not win.row.children[1].check:IsShown() and win.label:GetText() == "Never show again", "news: the box opens unticked")
+	check(win.divider.atlas == "Options_HorizontalDivider" and win.divider.y == -60, "news: the divider")
+	check(win.scroll.x == 24 and win.scroll.y == -68 and win.scroll.w == 512 and win.scroll.h == 436, "news: the notes area")
+	local heads = {}
+	for _, h in ipairs(win.headers) do if h:IsShown() then heads[#heads + 1] = h.text:GetText() end end
+	check(#heads == 2 and heads[1] == NEWS[1].version .. "  ·  " .. NEWS[1].date and heads[2] == NEWS[2].version .. "  ·  " .. NEWS[2].date, "news: version headers newest first: " .. table.concat(heads, ", "))
+	check(win.headers[1].w == 201 and win.headers[1].h == 32 and win.headers[1].x == (490 - 201) / 2, "news: headers 201 x 32, centred")
+	local bullets, older = 0, nil
+	for _, fs in ipairs(win.texts) do
+		if fs:IsShown() and fs.text == "•" then bullets = bullets + 1; check(fs.x == 8, "news: depth 1 bullet at 8") end
+		if fs:IsShown() and fs.text:find("^Older versions") then older = fs end
+	end
+	check(bullets == 12, "news: one bullet per changelog bullet: " .. bullets)
+	check(older and older.text == "Older versions: https://github.com/owner/forever-smart-graphics" and older.font == "GameFontDisable", "news: the older versions line")
+	check(not win.bar:IsShown(), "news: no scrollbar when the notes fit")
+	check(#W.truncated() == 0, "news: nothing cut: " .. table.concat(W.truncated(), "; "))
+
+	-- Pad: focus on the notes; A does nothing there; Up at the top reaches the box; A ticks; Down comes back.
+	W.press(win, "PADDDOWN")
+	check(UIn.Mode() == "pad" and win.focus and win.focus.region.w == 1 and not win.wash:IsShown(), "news: the first press focuses the notes")
+	local function prompts()
+		local keys = {}
+		for _, p in ipairs(win.footer.prompts) do if p:IsShown() then keys[#keys + 1] = p.key end end
+		return table.concat(keys, ",")
+	end
+	check(prompts() == "PAD2" and win.hint:IsShown() and win.hint.key == "PADDUP", "news: notes focused: Close only, D-pad Up hint: " .. prompts())
+	W.press(win, "PAD1")
+	check(not win.ticked, "news: A on the notes does nothing")
+	W.press(win, "PADDUP")
+	check(win.focus.region == win.row and win.wash:IsShown() and win.hint.key == "PAD1" and prompts() == "PAD1,PAD2", "news: Up at the top focuses the box: " .. prompts())
+	local tip
+	for _, f in ipairs(W.frames) do if f.owner == win.row and f:IsShown() and f.title then tip = f end end
+	check(tip and tip.title:GetText() == "Never show again" and tip.lines[1]:GetText():find("/fsg whatsnew", 1, true) and tip.point == "TOPRIGHT" and tip.rel == win.row and tip.y == -4, "news: the tooltip under the row names the command")
+	W.press(win, "PADDLEFT")
+	check(win.focus.region == win.row, "news: left does nothing")
+	W.press(win, "PAD1")
+	check(win.ticked and win.row.children[1].check:IsShown() and closes() == 0, "news: A ticks the box, nothing stored")
+	W.press(win, "PADDDOWN")
+	check(win.focus == win.nodes[1], "news: Down goes back to the notes")
+
+	-- Combat hides it without a close: nothing stored, the tick dropped, one re-open after the fight.
+	W.combat = true
+	nn.Fire("FSG_COMBAT_START")
+	check(not win:IsShown() and closes() == 0 and UIn.resume == nil, "news: combat closes it, stores nothing, offers no resume")
+	W.advance(3)
+	check(not win:IsShown(), "news: no re-open in combat")
+	W.combat = false
+	nn.Fire("FSG_COMBAT_END")
+	W.advance(2.1)
+	check(shown() and not win.ticked and closes() == 0, "news: re-opens once after the fight, unticked")
+	check(not (UIn.Message and UIn.Message() and UIn.Message():IsShown()), "news: the main window's resume offer is not used")
+	win.row:Click()
+	check(win.ticked, "news: a click on the row ticks the box")
+	win.ClosePanelButton:Click()
+	check(not win:IsShown() and last(nn, "NewsClose")[2] == true and news.never, "news: the X closes and stores never")
+
+	-- At most once per session on its own, the one re-open used.
+	news.pending = { entries = { NEWS[1] }, from = "1.0.0-beta.1" }
+	nn.Fire("PLAYER_ENTERING_WORLD")
+	W.advance(6)
+	check(not shown() and liveTickers() == 0, "news: never twice in a session")
+
+	-- The command: this version's notes, unticked; B, Escape and the close keys close and store.
+	news.current = { entries = { NEWS[1] } }
+	UIn.OpenPanel("smart")
+	nn.ShowWhatsNew()
+	check(shown() and not UIn.Main():IsShown() and win.version:GetText() == "Version 1.0.0" and not win.ticked, "news: the command opens this version's notes, unticked")
+	local count = 0
+	for _, h in ipairs(win.headers) do if h:IsShown() then count = count + 1 end end
+	check(count == 1, "news: one version from the command")
+	W.press(win, "PAD2")
+	check(not win:IsShown() and last(nn, "NewsClose")[2] == false and closes() == 2, "news: B closes and stores, unticked")
+	check(UIn.Selection().key == "smart" and UIn.resume == nil, "news: the main window's page and resume are untouched")
+	nn.ShowWhatsNew()
+	W.key(win, "ESCAPE")
+	check(not win:IsShown() and closes() == 3, "news: Escape closes and stores")
+	nn.ShowWhatsNew()
+	W.press(win, "PADFORWARD")
+	check(not win:IsShown() and closes() == 4, "news: the menu key closes and stores")
+	nn.ShowWhatsNew()
+	W.combat = true
+	nn.Fire("FSG_COMBAT_START")
+	W.combat = false
+	nn.Fire("FSG_COMBAT_END")
+	W.advance(5)
+	check(not shown() and closes() == 4, "news: a command window hidden by combat stores nothing and does not come back")
+
+	news.current = { entries = { NEWS[1] }, dev = true }
+	nn.ShowWhatsNew()
+	check(win.version:GetText() == "Development build · notes for " .. NEWS[1].version, "news: the dev build line")
+	UIn.CloseAll()
+	news.current = { entries = {} }
+	nn.ShowWhatsNew()
+	local empty
+	for _, fs in ipairs(win.texts) do if fs:IsShown() and fs.text == Ln.NEWS_EMPTY then empty = fs end end
+	check(shown() and empty and not win.headers[1]:IsShown(), "news: no notes for this version says so")
+	UIn.CloseAll()
+	news.current = nil
+	local logs = #W.log
+	nn.ShowWhatsNew()
+	check(not shown() and W.log[logs + 1] == Ln.NEWS_EMPTY, "news: no data file: the chat line, no window")
+	news.current = { entries = { NEWS[1] } }
+	W.combat = true
+	nn.ShowWhatsNew()
+	check(not shown() and W.log[#W.log] == Ln.COMBAT, "news: combat: the usual out-of-combat line")
+	W.combat = false
+
+	-- Long notes: the bar, the Scroll prompt, D-pad, wheel and stick scrolling, nested bullets.
+	local blocks = { { "h", "Section" }, { "p", "A paragraph." }, { "b", "Nested.", 2 } }
+	for i = 1, 40 do blocks[#blocks + 1] = { "b", "Line " .. i, 1 } end
+	news.current = { entries = { { version = "1.0.0-beta.2", date = "2026-11-19", blocks = blocks } } }
+	nn.ShowWhatsNew()
+	check(win.bar:IsShown() and win.bar.x == 528 and win.bar.y == -68 and prompts() == "GAMEPAD_STICK_RIGHT_VERTICAL,PAD2", "news: long notes: the bar and the Scroll prompt: " .. prompts())
+	local section, nested
+	for _, fs in ipairs(win.texts) do
+		if fs:IsShown() and fs.text == "Section" then section = fs end
+		if fs:IsShown() and fs.text == "Nested." then nested = fs end
+	end
+	check(section.font == "GameFontNormal" and section.x == 4 and nested.x == 34 and nested.w == 456, "news: gold section title, depth 2 indented 16")
+	check(win.scroll.vscroll == 0 and win.focus == win.nodes[1], "news: in the pad look it opens on the notes, at the top")
+	W.press(win, "PADDDOWN")
+	check(math.abs(win.scroll.vscroll - 43.2) < 1e-6, "news: Down scrolls 3 lines")
+	W.press(win, "PADDUP")
+	check(win.scroll.vscroll == 0 and win.focus == win.nodes[1], "news: Up scrolls back before it reaches the box")
+	win.scroll:Fire("OnMouseWheel", -1)
+	check(math.abs(win.scroll.vscroll - 43.2) < 1e-6, "news: the wheel scrolls 3 lines")
+	win:Fire("OnGamePadStick", "Left", 0, -1)
+	W.advance(0.1)
+	check(math.abs(win.scroll.vscroll - 43.2) < 1e-6, "news: the left stick does nothing")
+	win:Fire("OnGamePadStick", "Right", 0, -1)
+	W.advance(0.1)
+	win:Fire("OnGamePadStick", "Right", 0, 0)
+	local after = win.scroll.vscroll
+	W.advance(0.1)
+	check(after > 43.2 + 40 and win.scroll.vscroll == after, "news: the right stick scrolls smoothly and stops")
+	UIn.CloseAll()
+
+	-- A long version pair falls back to the version alone rather than cut; small screens scale it down.
+	news.running = "1.0.0-beta.13"
+	news.pending = { entries = { NEWS[1] }, from = "1.0.0-beta.12" }
+	UIParent:SetSize(1280, 560)
+	local fresh = stubNS(true)
+	local UIf = load(fresh)
+	fresh.news.running, fresh.news.pending = news.running, news.pending
+	fresh.Fire("PLAYER_ENTERING_WORLD")
+	W.advance(3.1)
+	local small = UIf.WhatsNew()
+	check(small and small:IsShown() and small.version:GetText() == "Version 1.0.0-beta.13" and #W.truncated() == 0, "news: a version line too long for its room shows the version alone")
+	check(small.scale < 1, "news: scaled to fit a small screen")
+	UIf.CloseAll()
+	UIParent:SetSize(1920, 1080)
+
+	for key, text in pairs(Ln) do
+		if type(key) == "string" and key:find("^NEWS_") then
+			local rest = text:gsub("\194\183", ""):gsub("\226\128\162", "")
+			check(not rest:find("[\128-\255]"), key .. ": ASCII apart from the middle dot and the bullet")
+		end
+	end
+end
 
 -- No Smart.lua: the Smart tab says so.
 local bare = stubNS(false)

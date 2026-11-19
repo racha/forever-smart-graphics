@@ -213,6 +213,23 @@ check(not ns.UI.Current(), "B goes to the page list, B again closes it")
 check(#W.trapped == 0, "no forbidden Blizzard UI touched: " .. table.concat(W.trapped, "; "))
 
 -- Restore puts the original back.
+-- A macro holds a profile: the engine and the window agree, and the location assignments stay.
+local heldId, cityBefore = ns.Profiles.FromPreset("ultra"), db.locations.city
+W.slash("profile " .. ns.Profiles.Get(heldId).name)
+check(ns.Apply.Active().source == "held" and ns.Apply.Active().profileId == heldId and db.locations.city == cityBefore, "/fsg profile holds a profile everywhere")
+check(ns.UI.WhyLine():find("holding the profile", 1, true), "the window says a profile is held")
+W.slash("profile auto")
+check(ns.Apply.Active().source ~= "held" and db.held == nil, "/fsg profile auto goes back to the location's profile")
+
+-- What's new: the generated notes, the saved state and the window agree. Only closing the window stores the version.
+db.news.seen = "1.0.0-beta.1"
+local pending = ns.News.Pending()
+check(pending and pending.from == "1.0.0-beta.1" and pending.entries[1] == ns.NEWS[1], "an update lists the notes since the last seen version, newest first")
+W.slash("whatsnew")
+check(ns.UI.Current() == ns.UI.WhatsNew() and db.news.seen == "1.0.0-beta.1", "/fsg whatsnew opens the window and stores nothing yet")
+W.press(ns.UI.Current(), "PAD2")
+check(not ns.UI.Current() and db.news.seen == ns.News.Running() and not ns.News.Pending(), "closing it records the running version")
+
 ns.Apply.RestoreOriginal()
 local wrong = {}
 for cvar, value in pairs(db.original) do

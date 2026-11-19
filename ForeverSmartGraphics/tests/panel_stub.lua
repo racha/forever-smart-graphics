@@ -229,6 +229,7 @@ function Obj:GetPushedTexture() return self.pushed end
 function Obj:GetDisabledTexture() return self.disabledTex end
 function Obj:GetHighlightTexture() return self.highlightTex end
 function Obj:SetValue(v) self.value = v end
+function Obj:SetVerticalScroll(v) self.vscroll = v end
 function Obj:SetScale(v) self.scale = v end
 function Obj:GetScale() return self.scale or 1 end
 function Obj:GetEffectiveScale() return self.scale or 1 end

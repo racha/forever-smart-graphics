@@ -4,9 +4,10 @@
 --   W.clamp[name] = n caps a write at n, like a client limit.
 --   W.cascade[name] = fn(value) runs after a write, like a graphics* preset rewriting engine cvars.
 --   W.instance / W.resting / W.mapID / W.zone / W.subzone   what the location APIs return.
+--   W.meta[field]         what C_AddOns.GetAddOnMetadata returns (Version, X-Website).
 --   W.writes              every SetCVar call in order: { cvar, value }.
 --   W.run(seconds, fps)   advances the clock frame by frame, running OnUpdate, tickers and timers.
-local ENGINE = { "Core.lua", "Catalog.lua", "Profiles.lua", "Location.lua", "Apply.lua" }
+local ENGINE = { "Core.lua", "NewsData.lua", "News.lua", "Catalog.lua", "Profiles.lua", "Location.lua", "Apply.lua" }
 
 local DEFAULT_CVARS = {
 	graphicsShadowQuality = "3", graphicsLiquidDetail = "2", graphicsPBRLiquidDetail = "1", graphicsParticleDensity = "4",
@@ -74,6 +75,9 @@ return function(dir, opts)
 		return row and row[level] or level
 	end
 	SlashCmdList = {}
+	-- Version defaults to the repo checkout's dev build; set W.meta.Version (or opts.meta) per test.
+	W.meta = opts.meta or { Version = "@project-version@", ["X-Website"] = "https://example.invalid/fsg" }
+	C_AddOns = { GetAddOnMetadata = function(_, field) return W.meta[field] end }
 
 	C_CVar = {
 		GetCVar = function(name) return W.cvars[lowerKey(name)] end,

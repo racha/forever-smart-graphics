@@ -722,4 +722,215 @@ for _, bad in ipairs({ { fps = 0, t = 1 }, { fps = 60 }, { fps = "60", t = 1 }, 
 	assert(W.ns.db.smart.ceiling == nil and W.ns.db.options.fpsPulse == true and W.said("repaired"), "bad ceiling dropped")
 end
 
+-- Profile hold (macros): one profile everywhere until released, location assignments untouched.
+W = new()
+W.login()
+W.run(4)
+ns, db = W.ns, W.ns.db
+P, L = ns.Profiles, ns.Location
+local town = P.Create("Town", { graphicsShadowQuality = 1 })
+local raidSet = P.Create("Raid set", { graphicsShadowQuality = 0 })
+local fastSet = P.Create("Fast", { graphicsShadowQuality = 4, graphicsTextureResolution = 0 })
+P.Assign("city", town)
+P.Assign("raid", raidSet)
+P.SetOverride("map:84", "Stormwind City", raidSet)
+local locations, overrides = W.copy(db.locations), W.copy(db.overrides)
+local changes = 0
+ns.On("FSG_PROFILES_CHANGED", function() changes = changes + 1 end)
+assert(P.Held() == nil and L.ProfileFor() == "default")
+W.lines = {}
+W.slash("profile fast")
+assert(P.Held() == fastSet and db.held == fastSet and W.said("holding Fast everywhere %(/fsg profile auto goes back%)"))
+local places = { { key = "city", overrideKey = "map:1" }, { key = "raid", overrideKey = "instance:409" }, { key = "outdoor", overrideKey = "map:84" } }
+for _, loc in ipairs(places) do
+	local id, source = L.ProfileFor(loc)
+	assert(id == fastSet and source == "held", loc.key .. " resolves to the held profile")
+end
+assert(L.ProfileFor(places[1], true) == town and L.ProfileFor(places[3], true) == raidSet, "assigned ignores the hold")
+assert(W.same(db.locations, locations) and W.same(db.overrides, overrides), "assignments untouched")
+assert(ns.Apply.Active().source == "held" and ns.Apply.Active().profileName == "Fast")
+assert(W.cvars.graphicsShadowQuality == "4", "applied")
+W.slash("profile")
+assert(W.said("^.*holding Fast$"))
+local before = changes
+assert(P.Hold(fastSet) and changes == before, "unchanged hold: no fire")
+assert(not P.Hold("nope") and P.Held() == fastSet, "unknown id refused")
+W.lines = {}
+W.slash("profile toggle FAST")
+assert(P.Held() == nil and W.said("back to switching by location") and W.cvars.graphicsShadowQuality == "3", "toggle releases")
+assert(L.ProfileFor(places[1]) == town and L.ProfileFor(places[2]) == raidSet and L.ProfileFor(places[3]) == raidSet, "release restores the per-location result")
+W.slash("profile toggle Fast")
+assert(P.Held() == fastSet, "toggle holds")
+W.slash("profile toggle Fast")
+assert(P.Held() == nil, "toggle twice = back to automatic")
+W.lines = {}
+W.slash("profile auto")
+assert(W.said("no profile is held"))
+W.slash("profile Nowhere")
+assert(P.Held() == nil and W.said("no profile named \"Nowhere\""), "unknown name: no change")
+
+-- The chat log credits a hold.
+db.options.chatLog = true
+W.lines = {}
+P.Hold(town)
+W.run(0.1)
+assert(W.said("Changed %(held: Town%): Shadow quality High to Fair"), "reason held: <name>")
+W.lines = {}
+P.Hold(nil)
+W.run(0.1)
+assert(W.said("Changed %(Open world: Default%): Shadow quality Fair to High"), "after a release the usual reason")
+
+-- Persists in the saved table; a missing profile is repaired; Delete releases.
+P.Hold(raidSet)
+local saved = W.copy(db)
+W = new({ db = saved })
+W.login()
+assert(W.ns.Profiles.Held() == raidSet and select(2, W.ns.Location.ProfileFor()) == "held", "survives a reload")
+saved = W.copy(W.ns.db)
+saved.held = "p999"
+W = new({ db = saved })
+W.login()
+assert(W.ns.db.held == nil and W.said("repaired"), "a missing held profile becomes nil")
+ns, db, P = W.ns, W.ns.db, W.ns.Profiles
+P.Hold(raidSet)
+assert(P.Delete(raidSet) and db.held == nil and P.Held() == nil, "Delete releases")
+
+-- Switching off refuses; use and restore release.
+P.Hold(town)
+ns.Apply.SetSwitching(false)
+W.lines = {}
+W.slash("profile Fast")
+assert(db.held == town and W.said("Smart Graphics is off; turn it on in /fsg"), "refused, nothing stored")
+assert(not P.Hold(nil) and db.held == town)
+ns.Apply.SetSwitching(true)
+W.slash("use Fast")
+assert(db.held == nil and db.locations.city == fastSet and ns.Location.ProfileFor() == fastSet, "use releases, then assigns everywhere")
+P.Hold(town)
+W.slash("restore")
+assert(db.held == nil and P.Held() == nil, "restore releases")
+
+-- A hold in combat is the player's action: written at once; heavy settings keep their wait.
+W = new()
+W.login()
+W.run(4)
+ns, db, P = W.ns, W.ns.db, W.ns.Profiles
+local combatSet = P.Create("Combat", { graphicsShadowQuality = 1, graphicsTextureResolution = 0 })
+W.setCombat(true)
+W.slash("profile combat")
+assert(P.Held() == combatSet and W.cvars.graphicsShadowQuality == "1", "written in combat")
+assert(W.cvars.graphicsTextureResolution == "2" and ns.Apply.CombatHeld() == nil, "heavy waits")
+W.setCombat(false)
+W.fire("PLAYER_ENTERING_WORLD", false, true)
+W.run(1)
+assert(W.cvars.graphicsTextureResolution == "0", "heavy lands at the loading screen")
+W.slash("help")
+assert(W.said("profile <name>|auto|toggle <name> %(hold a profile, for macros%)"))
+
+-- What's new: version order.
+local C = W.ns.News.Compare
+local chain = { "1.0.0-beta.1", "1.0.0-beta.2", "1.0.0-rc.0", "1.0.0", "1.0.1", "1.1.0" }
+for i = 1, #chain - 1 do assert(C(chain[i], chain[i + 1]) == -1 and C(chain[i + 1], chain[i]) == 1, chain[i] .. " < " .. chain[i + 1]) end
+assert(C("1.10.0", "1.9.0") == 1 and C("v1.2.0", "1.2.0") == 0 and C("1.0.0-beta.2", "1.0.0-beta.2") == 0)
+assert(C("1.0.0-beta", "1.0.0-beta.1") == -1 and C("1.0.0-1", "1.0.0-beta") == -1 and C("1.0.0-beta.10", "1.0.0-beta.9") == 1)
+for _, dev in ipairs({ "@project-version@", "1.4.0-3-gabc1234", "", "1.0", "1.0.0-", "1.0.0-beta..1" }) do
+	assert(C(dev, "1.0.0") == nil and C("1.0.0", dev) == nil, "dev build: " .. dev)
+end
+assert(C(nil, "1.0.0") == nil)
+
+-- What's new: state on load.
+local NEWS = {
+	{ version = "1.6.0", blocks = {} }, { version = "1.5.0", blocks = {} }, { version = "1.5.0-beta.1", blocks = {} },
+	{ version = "1.4.0", blocks = {} }, { version = "1.3.0", blocks = {} }, { version = "1.2.0", blocks = {} },
+	{ version = "1.1.0", blocks = {} }, { version = "1.0.0", blocks = {} },
+}
+local function versions(list)
+	local out = {}
+	for i, entry in ipairs(list) do out[i] = entry.version end
+	return table.concat(out, " ")
+end
+local function newsAt(version, saved, data)
+	W = new({ db = saved, meta = { Version = version, ["X-Website"] = "https://example.invalid/fsg" } })
+	W.ns.NEWS = data or NEWS
+	W.login()
+	return W.ns, W.ns.db, W.ns.News
+end
+local N
+ns, db, N = newsAt("1.5.0")
+assert(db.news.seen == "1.5.0" and db.news.never == nil and N.Pending() == nil, "fresh install: nothing")
+assert(N.Running() == "1.5.0" and N.Website() == "https://example.invalid/fsg")
+local betas = { { version = "1.0.0-beta.3", blocks = {} }, { version = "1.0.0-beta.2", blocks = {} }, { version = "1.0.0-beta.1", blocks = {} } }
+ns, db, N = newsAt("1.0.0-beta.3", { version = 1, options = {} }, betas)
+assert(db.news.seen == "1.0.0-beta.2", "existing data starts at the baseline")
+local pending = N.Pending()
+assert(versions(pending.entries) == "1.0.0-beta.3" and pending.older == false and pending.from == "1.0.0-beta.2")
+for _, dev in ipairs({ "@project-version@", "1.4.0-3-gabc1234", "" }) do
+	ns, db, N = newsAt(dev, { version = 1, options = {} })
+	assert(db.news == nil and N.Running() == nil and N.Pending() == nil, "dev build: no news key " .. dev)
+	N.Close(true)
+	assert(db.news == nil, "dev build: Close writes nothing")
+	assert(versions(N.Current().entries) == "1.6.0" and N.Current().dev == true, "dev build: newest notes")
+end
+ns, db, N = newsAt(nil, { version = 1 })
+assert(db.news == nil and N.Running() == nil)
+ns, db, N = newsAt("1.5.0", { version = 1, news = "broken" })
+assert(W.said("repaired") and db.news.seen == "1.0.0-beta.2" and db.news.never == nil)
+ns, db, N = newsAt("1.5.0", { version = 1, news = { seen = 3, never = "yes" } })
+assert(db.news.seen == "1.0.0-beta.2" and db.news.never == nil)
+ns, db, N = newsAt("1.5.0", { version = 1, news = { seen = "1.4.0", never = true } })
+assert(db.news.seen == "1.4.0" and db.news.never == true and N.Pending() == nil, "never: nothing")
+
+-- What's new: Pending.
+ns, db, N = newsAt("1.6.0", { version = 1, news = { seen = "1.0.0" } })
+pending = N.Pending()
+assert(versions(pending.entries) == "1.6.0 1.5.0 1.5.0-beta.1 1.4.0 1.3.0" and pending.older == true and pending.from == "1.0.0", "newest first, at most 5")
+assert(db.news.seen == "1.0.0", "Pending stores nothing")
+ns, db, N = newsAt("1.5.0", { version = 1, news = { seen = "1.3.0" } })
+assert(versions(N.Pending().entries) == "1.5.0 1.5.0-beta.1 1.4.0" and N.Pending().older == false, "nothing newer than running")
+ns, db, N = newsAt("1.5.0", { version = 1, news = { seen = "1.5.0-beta.1" } })
+assert(versions(N.Pending().entries) == "1.5.0", "pre-release to release: the release only")
+ns, db, N = newsAt("1.4.0", { version = 1, news = { seen = "1.5.0" } })
+assert(N.Pending() == nil and db.news.seen == "1.5.0", "downgrade: nil, seen kept")
+ns, db, N = newsAt("1.5.0", { version = 1, news = { seen = "1.5.0" } })
+assert(N.Pending() == nil and db.news.seen == "1.5.0", "same version")
+ns, db, N = newsAt("1.7.1", { version = 1, news = { seen = "1.6.0" } })
+assert(N.Pending() == nil and db.news.seen == "1.7.1", "nothing for players: seen moves quietly")
+ns, db, N = newsAt("1.6.0", { version = 1, news = { seen = "1.0.0" } })
+ns.NEWS = nil
+assert(N.Pending() == nil and N.Current() == nil and db.news.seen == "1.0.0", "no data: nothing, seen kept")
+
+-- What's new: Current and Close.
+ns, db, N = newsAt("1.5.0", { version = 1, news = { seen = "1.0.0" } })
+assert(versions(N.Current().entries) == "1.5.0" and not N.Current().dev)
+ns, db, N = newsAt("1.5.1", { version = 1, news = { seen = "1.0.0" } })
+assert(#N.Current().entries == 0, "no entry for the running version")
+N.Close()
+assert(db.news.seen == "1.5.1" and db.news.never == nil and N.Pending() == nil, "Close stores seen")
+db.news.seen = "1.0.0"
+N.Close(true)
+assert(db.news.seen == "1.5.1" and db.news.never == true, "ticked stores never")
+local reloaded = W.copy(ForeverSmartGraphicsDB)
+ns, db, N = newsAt("1.6.0", reloaded)
+assert(db.news.never == true and N.Pending() == nil, "never survives a reload")
+
+-- What's new: /fsg whatsnew.
+local shown = 0
+ns.ShowWhatsNew = function() shown = shown + 1 end
+W.slash("whatsnew")
+assert(db.news.never == nil and W.said("What's new is on again: it opens after each update%.") and shown == 1)
+W.lines = {}
+W.slash("whatsnew")
+assert(not W.said("on again") and shown == 2)
+ns.NEWS = nil
+W.slash("whatsnew")
+assert(W.said("Nothing new for players in this version%.") and shown == 2)
+ns, db, N = newsAt("1.6.0", { version = 1 })
+W.slash("whatsnew")
+assert(W.said("window not loaded"), "Core stub until the window replaces it")
+W.slash("help")
+assert(W.said("| whatsnew %(what changed in this version%) |"))
+ns, db, N = newsAt("@project-version@", { version = 1 })
+ns.ShowWhatsNew = function() shown = shown + 1 end
+W.slash("whatsnew")
+assert(db.news == nil and shown == 3, "dev build: opens, writes nothing")
+
 io.write("engine_spec: all passed\n")

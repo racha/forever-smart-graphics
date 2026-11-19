@@ -60,9 +60,21 @@ Get it from CurseForge, or download the zip from Releases and unzip it into `Wor
 | `/fsg goal <fps\|balanced\|fidelity>`, `/fsg pace <aggressive\|balanced\|smooth>` | Smart mode's goal and pace |
 | `/fsg findbest <fps>`, `/fsg finish`, `/fsg stop` | Find my best settings |
 | `/fsg use <profile name>` | use that profile everywhere |
+| `/fsg profile <name>`, `/fsg profile auto`, `/fsg profile toggle <name>` | hold a profile everywhere until you go back to automatic (for macros) |
 | `/fsg restore` | your original settings back |
+| `/fsg whatsnew` | what changed in this version |
 | `/fsg log on\|off` | log setting changes in chat |
 | `/fsg debug on\|off`, `/fsg selftest` | for bug reports |
+
+## Macros
+
+A macro can switch profiles for you. Holding a profile uses it everywhere and leaves your location setup alone; `auto` goes back to switching by location.
+
+```
+/fsg profile toggle Raid
+```
+
+Put that on a button: one press holds the profile named Raid, the next press goes back to automatic. Smart mode keeps adjusting on top of a held profile.
 
 ## FAQ
 

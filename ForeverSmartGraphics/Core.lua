@@ -107,6 +107,9 @@ end
 -- Replaced by Panel.lua; the compartment globals too.
 function ns.TogglePanel() ns.log("window not loaded") end
 
+-- Replaced by Panel/WhatsNew.lua.
+function ns.ShowWhatsNew() ns.log("window not loaded") end
+
 function ForeverSmartGraphics_OnCompartmentClick() ns.TogglePanel() end
 function ForeverSmartGraphics_OnCompartmentEnter() end
 function ForeverSmartGraphics_OnCompartmentLeave() end
@@ -216,6 +219,11 @@ local function repairMappings(db, fix)
 		end
 	end
 	db.overrides = overrides
+
+	if db.held ~= nil and not (type(db.held) == "string" and profiles[db.held]) then
+		fix("held")
+		db.held = nil
+	end
 end
 
 local function repairLearned(learned, fix)
@@ -299,6 +307,22 @@ local function captureOriginal(db)
 	db.original = original
 end
 
+-- A first install starts at the running version and sees nothing. Data saved before What's new existed has no
+-- news key: it starts at the last release without the window, so the player sees this version's notes once.
+-- A dev build has no version to store and leaves db.news alone.
+local NEWS_BASELINE = "1.0.0-beta.2"
+local function repairNews(db, fresh, fix)
+	local running = ns.News and ns.News.Running()
+	if not running then return end
+	local news = db.news
+	if news ~= nil and type(news) ~= "table" then fix("news") end
+	news = asTable(news)
+	if news.seen ~= nil and type(news.seen) ~= "string" then fix("news.seen") end
+	if news.never ~= nil and news.never ~= true then fix("news.never") end
+	local seen = type(news.seen) == "string" and news.seen or (fresh and running or NEWS_BASELINE)
+	db.news = { seen = seen, never = news.never == true or nil }
+end
+
 -- Repairs whatever the SavedVariables hold into the current shape; other top-level keys stay untouched.
 local function loadDB()
 	local db = asTable(ForeverSmartGraphicsDB)
@@ -360,6 +384,7 @@ local function loadDB()
 	repairProfiles(db, fix)
 	repairMappings(db, fix)
 	repairSmart(db, fix)
+	repairNews(db, fresh, fix)
 	-- The default floor went from 60% to 75%: move only a floor still at the old default, once, so a 60% the
 	-- player picks afterwards stays.
 	if not db.migrations.floor75 and math.abs(db.smart.scaleFloor - OLD_FLOOR) < 1e-6 then db.smart.scaleFloor = ns.SMART_FLOOR[3] end
@@ -401,10 +426,20 @@ ns.On("PLAYER_LOGOUT", function()
 end)
 
 local HELP = "/fsg opens the window (so do the addon compartment and the minimap button). Commands: status"
-	.. " | use <profile name> (that profile everywhere) | restore (your original settings, switching off) | applynow (a waiting texture change)"
-	.. " | smart on|off | target <fps> | floor <percent> | log on|off (settings changes in chat) | log smart on|off (Smart mode steps too) | debug on|off | selftest | help"
+	.. " | use <profile name> (that profile everywhere) | profile <name>|auto|toggle <name> (hold a profile, for macros) | restore (your original settings, switching off) | applynow (a waiting texture change)"
+	.. " | smart on|off | target <fps> | floor <percent> | log on|off (settings changes in chat) | log smart on|off (Smart mode steps too) | whatsnew (what changed in this version) | debug on|off | selftest | help"
 
 function ns.commands.help() ns.log(HELP) end
+
+function ns.commands.whatsnew()
+	local news = ns.db.news
+	if news and news.never then
+		news.never = nil
+		ns.log("What's new is on again: it opens after each update.")
+	end
+	if not ns.NEWS then return ns.log("Nothing new for players in this version.") end
+	ns.ShowWhatsNew()
+end
 
 function ns.commands.debug(args)
 	local on = args[1] == "on"

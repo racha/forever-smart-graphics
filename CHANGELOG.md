@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0-beta.3 — 2026-11-19
+
+- New: hold a profile from a macro. `/fsg profile <name>` uses that profile everywhere, `/fsg profile auto` goes back to switching by location, and `/fsg profile toggle <name>` does both from one button. Your location setup is left alone, and Smart mode keeps adjusting on top of the held profile.
+- New: a What's new window opens once after each update and lists what changed. Tick "Never show again" to turn it off; `/fsg whatsnew` brings it back.
+- The window shows when a profile is held, and the Overview page has a "Back to automatic" button.
+
 ## 1.0.0-beta.2 — 2026-11-19
 
 - Fixed: "What it learned" on the Smart page always showed nothing. It now lists what Smart mode remembers, grouped by kind of place, with Save as profile and Reset.

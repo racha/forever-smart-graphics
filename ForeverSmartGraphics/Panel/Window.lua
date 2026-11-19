@@ -231,6 +231,7 @@ function UI.NewWindow(w, h, native)
 	local underlay = (window.Bg or window):CreateTexture(nil, "BACKGROUND", nil, -8)
 	underlay:SetColorTexture(0, 0, 0, 1)
 	underlay:SetAllPoints()
+	window.underlay = underlay
 	if native then
 		local inner = window:CreateTexture(nil, "OVERLAY", nil, 2)
 		inner:SetAtlas("Options_InnerFrame", true)

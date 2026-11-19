@@ -66,6 +66,7 @@ UI.L = {
 	STRIP_SMART = "Smart",
 	STRIP_OFF = "Off",
 	STRIP_NONE = "None",
+	STRIP_HELD = "%s (held)",
 	STRIP_CALIBRATING = "Finding best settings",
 	STRIP_SMART_VALUE = "%s · %s",
 	STRIP_TARGET = "target %d",
@@ -78,6 +79,8 @@ UI.L = {
 	STRIP_GOAL = "Goal %d fps",
 	WHY_TYPE = "%s zones use the profile %s.",
 	WHY_PLACE = "%s has its own profile, %s.",
+	WHY_HELD = "You are holding the profile %s everywhere. Switching by location is paused.",
+	HOLD_RELEASE = "Back to automatic",
 	WHY_DEFAULT = "%s has no profile of its own, so it uses Default.",
 	WHY_OFF = "Smart Graphics is off. The game's own settings are in use.",
 	WHY_HERE = "You are in %s.",
@@ -366,6 +369,17 @@ UI.L = {
 	AGO_SECONDS = "%d s ago",
 	AGO_MINUTES = "%d min ago",
 	SOURCES = { smart = "smart mode", profile = "profile", restore = "restore", apply = "applied", adjust = "smart adjust", calibrate = "find my best settings", ["after combat"] = "after combat" },
+	NEWS_TITLE = "Forever Smart Graphics · What's new",
+	NEWS_VERSION = "Version %s",
+	NEWS_UPDATED = "Version %s · updated from %s",
+	NEWS_DEV = "Development build · notes for %s",
+	NEWS_NEVER = "Never show again",
+	NEWS_NEVER_TIP = "What's new won't open after updates.\nType /fsg whatsnew to see it again.",
+	NEWS_SCROLL = "Scroll",
+	NEWS_OLDER = "Older versions: %s",
+	NEWS_EMPTY = "Nothing new for players in this version.",
+	NEWS_HEADER = "%s  ·  %s",
+	NEWS_BULLET = "•",
 }
 
 local L = UI.L
@@ -560,7 +574,7 @@ end
 -- template registers with InputDeviceIconSetManager, so it is not used). Without a glyph set, the button's name.
 local ICON_STATE = { Normal = 1, Active = 4, Disabled = 5 }
 local LARGE_PROMPT_W, LARGE_PROMPT_H = 76, 75
-local GLYPH_NAME = { PAD1 = "A", PAD2 = "B", PAD3 = "X", PAD4 = "Y", PADLSHOULDER = "L1", PADRSHOULDER = "R1", PADDUP = "Up", PADDDOWN = "Down", PADDLEFT = "Left", PADDRIGHT = "Right" }
+local GLYPH_NAME = { PAD1 = "A", PAD2 = "B", PAD3 = "X", PAD4 = "Y", PADLSHOULDER = "L1", PADRSHOULDER = "R1", PADDUP = "Up", PADDDOWN = "Down", PADDLEFT = "Left", PADDRIGHT = "Right", GAMEPAD_STICK_RIGHT_VERTICAL = "RS" }
 
 local function glyphAtlas(key, state)
 	local util = InputIconTextureSetUtility
@@ -1009,6 +1023,7 @@ function UI.Tooltip(owner, spec)
 	if side ~= "left" and right and screen and right + need > screen and left and left - need >= 0 then side = "left"
 	elseif side == "left" and left and left - need < 0 and right and screen and right + need <= screen then side = "right" end
 	if spec.side == "above" then tip:SetPoint("BOTTOMLEFT", owner, "TOPRIGHT", UI.N.TIP_X, 0)
+	elseif spec.side == "below" then tip:SetPoint("TOPRIGHT", owner, "BOTTOMRIGHT", 0, -4)
 	elseif side == "left" then tip:SetPoint("TOPRIGHT", owner, "TOPLEFT", -8, 0)
 	else tip:SetPoint("TOPLEFT", owner, "TOPRIGHT", 8, 0) end
 	tip:SetScale(owner:GetEffectiveScale() / UIParent:GetEffectiveScale())

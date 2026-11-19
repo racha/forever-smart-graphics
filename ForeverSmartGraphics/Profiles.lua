@@ -112,6 +112,7 @@ function Profiles.Delete(id)
 	for key, entry in pairs(data.overrides) do
 		if entry.profile == id then data.overrides[key] = nil end
 	end
+	if data.held == id then data.held = nil end
 	changed(id)
 	return true
 end
@@ -203,4 +204,22 @@ function Profiles.RemoveOverride(key)
 	db().overrides[key] = nil
 	changed(entry.profile)
 	return true
+end
+
+-- A hold: one profile in every place until released (macros), on top of the location assignments, which stay as
+-- they are. nil releases. False for an unknown id or with switching by location off.
+function Profiles.Hold(id)
+	local data = db()
+	if not data.options.switching or (id ~= nil and not Profiles.Get(id)) then return false end
+
+	local previous = Profiles.Held()
+	if previous == id then return true end
+	data.held = id
+	changed(id or previous)
+	return true
+end
+
+function Profiles.Held()
+	local id = db().held
+	return id and Profiles.Get(id) and id or nil
 end

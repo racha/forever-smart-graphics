@@ -162,6 +162,14 @@ local function notice()
 			refresh()
 		end } }, "off"
 	end
+	local held = ns.Profiles.Held and ns.Profiles.Held()
+	if held then
+		local profile = ns.Profiles.Get(held)
+		return string.format(L.WHY_HELD, profile and profile.name or held), { { L.HOLD_RELEASE, function()
+			ns.Profiles.Hold(nil)
+			refresh()
+		end } }
+	end
 	local pending = ns.Apply.Pending and ns.Apply.Pending()
 	if pending then
 		local text = string.format(pending.waitingCombat and L.BANNER_PENDING_COMBAT or L.BANNER_PENDING, pendingNames(pending.values))

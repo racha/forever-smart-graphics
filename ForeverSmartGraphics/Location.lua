@@ -47,8 +47,12 @@ function Location.Current()
 end
 
 -- The profile id for loc and where it came from: "place" (an override), "type" (the location type) or "default".
-function Location.ProfileFor(loc)
+-- assigned: the place's own assignment, ignoring a held profile (a new place starts from it).
+function Location.ProfileFor(loc, assigned)
 	loc = loc or Location.Current()
+	local held = not assigned and ns.Profiles and ns.Profiles.Held()
+	if held then return held, "held" end
+
 	local db, profiles = ns.db, ns.db.profiles
 	local override = db.overrides[loc.overrideKey]
 	if override and profiles[override.profile] then return override.profile, "place" end

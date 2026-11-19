@@ -12,7 +12,7 @@ local N = UI.N
 
 -- Ours on top of the native numbers: the status strip in the tab band, the action bar under the page title.
 -- The strip starts right of the round portrait (62 wide at -5): 62 instead of the tab band's 32.
-local STRIP_X, STRIP_Y, STRIP_H, STRIP_PAD, STRIP_RIGHT, STRIP_VALUE_W = 62, 27, 37, 8, 32, 240
+local STRIP_X, STRIP_Y, STRIP_H, STRIP_PAD, STRIP_RIGHT, STRIP_VALUE_W = 62, 27, 37, 8, 32, 260
 local PORTRAIT = "Interface\\AddOns\\ForeverSmartGraphics\\Media\\portrait"
 local BAR_Y, BAR_H, HEADER_BAR_H, FLASH_FOR = 54, 22, 82, 4
 local METER_W, METER_H, METER_SPAN = 96, 7, 1.5
@@ -46,6 +46,12 @@ local function calibrating()
 	return state and state.running and state
 end
 
+-- The profile's name as the strip and the minimap tooltip show it: "(held)" after it while a macro holds it.
+function UI.ActiveProfileName(active)
+	local name = active.profileName or L.DEFAULT
+	return active.source == "held" and string.format(L.STRIP_HELD, name) or name
+end
+
 -- Why this profile is in use here (Apply.Active().source), for the strip's tooltip and the Overview sentence.
 function UI.WhyLine(gold)
 	local active = ns.Apply.Active() or {}
@@ -54,6 +60,7 @@ function UI.WhyLine(gold)
 	local name = active.profileName or L.DEFAULT
 	if gold then name = "|cffffd100" .. name .. "|r" end
 	if not ns.db.options.switching then return L.WHY_OFF end
+	if active.source == "held" then return string.format(L.WHY_HELD, name) end
 	if active.source == "place" then return string.format(L.WHY_PLACE, loc.name or L.UNKNOWN_PLACE, name) end
 	if active.source == "type" then return string.format(L.WHY_TYPE, typeLabel, name) end
 	return string.format(L.WHY_DEFAULT, typeLabel)
@@ -168,7 +175,8 @@ local function chevron(after)
 	return tex
 end
 
--- The value keeps its whole text (up to STRIP_VALUE_W), so it never runs into the chevron after it.
+-- The value keeps its whole text (up to STRIP_VALUE_W: a 32-letter profile name with " (held)"), so it never runs into
+-- the chevron after it.
 local function sizeSegment(seg)
 	local value = math.min(UI.TextWidth(seg.value), STRIP_VALUE_W)
 	seg.value:SetWidth(value + 1)
@@ -214,7 +222,7 @@ local function drawStrip()
 	local loc = active.loc or {}
 	strip.here.value:SetText(string.format(L.STRIP_SMART_VALUE, loc.name or L.UNKNOWN_PLACE, ns.Location.LABELS[loc.key] or L.UNKNOWN_PLACE))
 	local switching = ns.db.options.switching
-	strip.profile.value:SetText(switching and (active.profileName or L.DEFAULT) or L.STRIP_NONE)
+	strip.profile.value:SetText(switching and UI.ActiveProfileName(active) or L.STRIP_NONE)
 	strip.profile.value:SetFontObject(switching and "GameFontHighlight" or "GameFontDisable")
 	local smartOn = ns.Smart and ns.Smart.Enabled()
 	local text = L.STRIP_OFF
@@ -659,7 +667,7 @@ end
 local function fpsTip(self)
 	local active = ns.Apply.Active() or {}
 	local loc = active.loc or {}
-	local lines = { string.format(L.FPS_TIP_PLACE, loc.name or L.UNKNOWN_PLACE, ns.Location.LABELS[loc.key] or L.UNKNOWN_PLACE), string.format(L.FPS_TIP_PROFILE, active.profileName or L.DEFAULT) }
+	local lines = { string.format(L.FPS_TIP_PLACE, loc.name or L.UNKNOWN_PLACE, ns.Location.LABELS[loc.key] or L.UNKNOWN_PLACE), string.format(L.FPS_TIP_PROFILE, UI.ActiveProfileName(active)) }
 	if ns.Smart and ns.Smart.Enabled() then lines[#lines + 1] = string.format(L.FPS_TIP_SMART, UI.SmartStatus(ns.Smart.State()), fpsGoal()) end
 	if #batches > 0 then
 		lines[#lines + 1] = { text = L.FPS_TIP_CHANGES, color = { NORMAL_FONT_COLOR:GetRGB() } }

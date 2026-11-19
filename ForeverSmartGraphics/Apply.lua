@@ -113,9 +113,11 @@ end
 local function readable(reason)
 	if REASONS[reason] then return REASONS[reason] end
 	local loc = ns.Location.Current()
-	local id = ns.Location.ProfileFor(loc)
+	local id, source = ns.Location.ProfileFor(loc)
 	local profile = ns.Profiles.Get(id)
-	return (ns.Location.LABELS[loc.key] or loc.key) .. ": " .. (profile and profile.name or "Default")
+	local name = profile and profile.name or "Default"
+	if source == "held" then return "held: " .. name end
+	return (ns.Location.LABELS[loc.key] or loc.key) .. ": " .. name
 end
 
 local function smartOn() return ns.Smart and ns.Smart.Enabled() or false end
@@ -356,6 +358,7 @@ function Apply.RestoreOriginal()
 	if ns.Smart and ns.Smart.CancelAdjust then ns.Smart.CancelAdjust() end
 	if ns.Smart then ns.Smart.SetEnabled(false) end
 	db.smart.enabled = false
+	db.held = nil
 	if pending then queue({}) end
 	held = {}
 
@@ -432,8 +435,37 @@ function ns.commands.use(args)
 	local id = ns.Profiles.FindByName(name)
 	if not id then return ns.log("no profile named \"" .. name .. "\"") end
 
+	-- "Everywhere, for good": a hold would hide it.
+	ns.db.held = nil
 	ns.Profiles.AssignAll(id)
 	ns.log(ns.Profiles.Get(id).name .. " is now used everywhere")
+end
+
+local NONE_HELD = "no profile is held"
+
+-- /fsg profile <name> | auto | toggle <name>, or alone to report. auto and toggle are reserved first words.
+function ns.commands.profile(args)
+	local Profiles, first = ns.Profiles, (args[1] or ""):lower()
+	local held = Profiles.Held()
+	if #args == 0 then return ns.log(held and "holding " .. Profiles.Get(held).name or NONE_HELD) end
+	if not ns.db.options.switching then return ns.log("Smart Graphics is off; turn it on in /fsg") end
+
+	local release = first == "auto"
+	local id
+	if not release then
+		local name = table.concat(args, " ", first == "toggle" and 2 or 1)
+		id = Profiles.FindByName(name)
+		if not id then return ns.log("no profile named \"" .. name .. "\"") end
+		release = first == "toggle" and id == held
+	end
+	if release then
+		if not held then return ns.log(NONE_HELD) end
+		Profiles.Hold(nil)
+		return ns.log("back to switching by location")
+	end
+
+	Profiles.Hold(id)
+	ns.log("holding " .. Profiles.Get(id).name .. " everywhere (/fsg profile auto goes back)")
 end
 
 function ns.commands.restore()

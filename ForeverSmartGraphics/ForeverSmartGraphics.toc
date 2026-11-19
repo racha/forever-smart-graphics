@@ -7,12 +7,15 @@
 ## IconTexture: Interface\AddOns\ForeverSmartGraphics\Media\logo
 ## Category: User Interface
 ## X-License: MIT
+## X-Website: https://github.com/racha/forever-smart-graphics
 ## X-Curse-Project-ID: 1812448
 ## AddonCompartmentFunc: ForeverSmartGraphics_OnCompartmentClick
 ## AddonCompartmentFuncOnEnter: ForeverSmartGraphics_OnCompartmentEnter
 ## AddonCompartmentFuncOnLeave: ForeverSmartGraphics_OnCompartmentLeave
 
 Core.lua
+NewsData.lua
+News.lua
 Catalog.lua
 Profiles.lua
 Location.lua
@@ -29,4 +32,5 @@ Panel/GeneralTab.lua
 Panel/OverviewTab.lua
 Panel/Toast.lua
 Panel/Calibrate.lua
+Panel/WhatsNew.lua
 Panel/Panel.lua

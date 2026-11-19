@@ -81,7 +81,8 @@ end
 local function addCurrent()
 	local loc = ns.Location.Current()
 	if not (loc and loc.overrideKey) or ns.db.overrides[loc.overrideKey] then return end
-	ns.Profiles.SetOverride(loc.overrideKey, loc.name or L.UNKNOWN_PLACE, ns.Location.ProfileFor(loc) or "default")
+	-- Its own assignment, not a profile a macro holds.
+	ns.Profiles.SetOverride(loc.overrideKey, loc.name or L.UNKNOWN_PLACE, ns.Location.ProfileFor(loc, true) or "default")
 	UI.UserEdit()
 	refresh()
 end
