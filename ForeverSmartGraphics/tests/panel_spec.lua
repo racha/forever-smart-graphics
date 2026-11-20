@@ -90,6 +90,7 @@ local function stubNS(withSmart)
 			return a ~= nil and b ~= nil and math.abs(a - b) < 1e-6
 		end,
 		Get = function(cvar) return byName[cvar] end,
+		Range = function(cvar) local e = byName[cvar] return e and e.min, e and e.max end,
 		Clamp = function(cvar, v)
 			local e = byName[cvar]
 			if not e then return nil end
@@ -204,6 +205,11 @@ local function stubNS(withSmart)
 			SetEnabled = function(on) call("SetEnabled", on) db.smart.enabled = on end,
 			SetTarget = function(fps) call("SetTarget", fps) db.smart.target = fps end,
 			SetFloor = function(scale) call("SetFloor", scale) db.smart.scaleFloor = scale end,
+			SetScaleMax = function(scale)
+				call("SetScaleMax", scale)
+				db.smart.scaleMax = math.max(1, math.min(2, byName.RenderScale.max, scale))
+				return db.smart.scaleMax
+			end,
 			Areas = function() return ns.areas end,
 			ForgetArea = function(key) call("ForgetArea", key) end,
 			State = function() return ns.smartState or { status = db.smart.enabled and (ns.preAdjusted and "pre-adjusted" or "holding") or "off", area = ns.preAdjusted and { key = "map:85", name = "Orgrimmar" }, fps = 58, target = db.smart.target, cap = 73, locKey = "city", last = { cvar = "RenderScale", from = 0.75, to = 0.7, t = 1 } } end,
@@ -656,6 +662,70 @@ check(last(ns, "SetGoal")[2] == "balanced", "the Smart page's Goal")
 main:Focus(labelled(L.FLOOR))
 W.press(main, "PADDLEFT")
 check(math.abs(last(ns, "SetFloor")[2] - 0.55) < 1e-9, "floor steps by 5%")
+
+-- Render scale maximum: under the minimum, 100% up to this machine's highest render scale, only when that is above 100%.
+check(L.FLOOR == "Render scale minimum" and L.SCALE_MAX == "Render scale maximum" and L.SMART_TIP:find("down to its minimum", 1, true) and L.ABOUT_TEXT:find("/fsg floor <percent> · /fsg maxscale <percent>", 1, true), "minimum / maximum labels, the maxscale command")
+for key, text in pairs(L) do check(type(text) ~= "string" or key == "ABOUT_TEXT" or not text:lower():find("floor", 1, true), key .. " no longer says floor") end
+local renderScale = ns.Catalog.Get("RenderScale")
+local function scaleMaxNode() return labelled(L.SCALE_MAX) end
+local function nodeIndex(node) for i, n in ipairs(main.nodes) do if n == node then return i end end end
+-- A 100% display: the row stays in its place, greyed like any setting that cannot change, with the reason as its tip.
+local function checkLocked(when)
+	local node, row = scaleMaxNode(), smartPage.scaleMax
+	local slider = row.slider
+	check(node and row:IsShown() and nodeIndex(node) == nodeIndex(labelled(L.FLOOR)) + 1 and row.flowY > smartPage.floor.flowY, when .. ": the maximum row under the minimum, in the D-pad order")
+	check(row.disabled and row.label.font == "GameFontDisable" and slider.alpha == 0.5 and not slider.bar:IsMouseEnabled() and not slider.steppers[-1]:IsEnabled() and not slider.steppers[1]:IsEnabled(), when .. ": greyed, no drag, no steppers")
+	check(slider.value:GetText() == "100%", when .. ": shows 100%")
+	main:Focus(node)
+	check(tipLineOf(L.SCALE_MAX_LOCKED_TIP) and not tipLineOf(L.SCALE_MAX_TIP), when .. ": the tooltip is the reason only")
+	local stored, calls = ns.db.smart.scaleMax, #ns.calls
+	W.press(main, "PADDRIGHT")
+	W.press(main, "PADDLEFT")
+	slider.bar:Fire("OnValueChanged", 150)
+	check(#ns.calls == calls and ns.db.smart.scaleMax == stored, when .. ": nudges and a drag never call SetScaleMax")
+	check(main.focus == node and slider.value:GetText() == "100%", when .. ": the focus stays, still 100%")
+end
+checkLocked("a 100% machine")
+renderScale.max = 2
+ns.db.smart.scaleMax = nil
+open("smart")
+local high = scaleMaxNode()
+main:Focus(high)
+check(not smartPage.scaleMax.disabled and smartPage.scaleMax.slider.bar:IsMouseEnabled() and tipLineOf(L.SCALE_MAX_TIP) and not tipLineOf(L.SCALE_MAX_LOCKED_TIP), "a 2.0 machine: enabled, the normal tooltip")
+check(high and smartPage.scaleMax:IsShown() and nodeIndex(high) == nodeIndex(labelled(L.FLOOR)) + 1, "a 2.0 machine: the maximum row right under the minimum")
+check(smartPage.scaleMax.flowY > smartPage.floor.flowY and smartPage.nowSection.flowY > smartPage.scaleMax.flowY, "placed under the minimum")
+check(smartPage.scaleMax.slider.value:GetText() == "100%", "nil scaleMax reads as 100%")
+main:Focus(high)
+W.press(main, "PADDRIGHT")
+check(math.abs(last(ns, "SetScaleMax")[2] - 1.05) < 1e-9 and smartPage.scaleMax.slider.value:GetText() == "105%", "right: 105%")
+W.press(main, "PADDLEFT")
+local calls = #ns.calls
+W.press(main, "PADDLEFT")
+check(#ns.calls == calls and ns.db.smart.scaleMax == 1, "stops at 100%")
+ns.db.smart.scaleMax = 2
+open("smart")
+main:Focus(scaleMaxNode())
+calls = #ns.calls
+W.press(main, "PADDRIGHT")
+check(#ns.calls == calls and smartPage.scaleMax.slider.value:GetText() == "200%", "stops at 200%")
+smartPage.scaleMax.slider.bar:Fire("OnValueChanged", 147)
+check(math.abs(last(ns, "SetScaleMax")[2] - 1.45) < 1e-9, "a drag to 147 lands on 145")
+renderScale.max = 1.5
+ns.db.smart.scaleMax = 1.45
+open("smart")
+main:Focus(scaleMaxNode())
+W.press(main, "PADDRIGHT")
+calls = #ns.calls
+W.press(main, "PADDRIGHT")
+check(ns.db.smart.scaleMax == 1.5 and #ns.calls == calls and smartPage.scaleMax.slider.value:GetText() == "150%", "a 1.5 machine ends at 150%")
+local setScaleMax = ns.Smart.SetScaleMax
+ns.Smart.SetScaleMax = nil
+open("smart")
+check(scaleMaxNode() == nil and not smartPage.scaleMax:IsShown(), "no SetScaleMax: no maximum row")
+ns.Smart.SetScaleMax = setScaleMax
+renderScale.max = 1
+open("smart")
+checkLocked("back to a 100% machine with 150% stored")
 local learnedFold = nodeWhere(function(n) return n.foldKey == "learned" end)
 check(learnedFold and learnedFold.region.count:GetText() == "1 locations" and labelled("City") == nil, "What it learned starts folded")
 learnedFold.region:Click()

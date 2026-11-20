@@ -87,7 +87,7 @@ W = new()
 W.login()
 ns = W.ns
 local C = ns.Catalog
-assert(#C.LIST == 38 and C.LIST[1].group == "quality" and C.Get("rENDERsCALE").cvar == "RenderScale")
+assert(#C.LIST == 39 and C.LIST[1].group == "quality" and C.Get("rENDERsCALE").cvar == "RenderScale")
 local quality, rank, last = 0, { quality = 1, render = 2, hidden = 3 }, 1
 for _, entry in ipairs(C.LIST) do
 	if entry.group == "quality" then quality = quality + 1 end
@@ -99,15 +99,36 @@ for _, cvar in ipairs({ "graphicsTextureResolution", "textureFilteringMode", "sh
 assert(C.Get("RenderScale").smart and C.Get("sunShafts").smart and not C.Get("graphicsTextureResolution").smart)
 assert(C.PRIOR.RenderScale == 6 and C.PRIOR.shadowSoft == 11 and C.PRIOR.graphicsViewDistance == 0.5)
 assert(C.NEVER.gxapi and C.NEVER.msaaquality and C.Get("gxApi") == nil and C.Clamp("MSAAQuality", 1) == nil and C.Clamp("nothing", 1) == nil)
-assert(C.Clamp("RenderScale", 0.77) == 0.75 and C.Clamp("RenderScale", 0.1) == 0.35 and C.Clamp("RenderScale", 1.5) == 1)
+assert(C.Clamp("RenderScale", 0.77) == 0.75 and C.Clamp("RenderScale", 0.1) == 0.35 and C.Clamp("RenderScale", 1.5) == 1.5)
 assert(C.Clamp("groundEffectDensity", 0) == 16 and C.Clamp("groundEffectDensity", 70) == 64 and C.Clamp("graphicsSSAO", 9) == 4)
 assert(C.Clamp("shadowTextureSize", 1900) == 2048 and C.Clamp("graphicsParticleDensity", 0) == 1 and C.Clamp("shadowSoft", 0 / 0) == nil)
-assert(C.Step("RenderScale", 0.75, -1) == 0.7 and C.Step("RenderScale", 1, 1) == nil and C.Step("RenderScale", 0.35, -1) == nil)
+assert(C.Step("RenderScale", 0.75, -1) == 0.7 and C.Step("RenderScale", 0.35, -1) == nil)
 assert(C.Step("graphicsSSAO", 0, -1) == nil and C.Step("graphicsSSAO", 3, 1) == 4)
 assert(C.Step("shadowTextureSize", 2048, 1) == 4096 and C.Step("shadowTextureSize", 512, -1) == nil and C.Step("shadowTextureSize", 2048, -1) == 1536)
 assert(C.Format("RenderScale", 0.75) == "75%" and C.Format("shadowSoft", 1) == "On" and C.Format("graphicsShadowQuality", 0) == "Low")
 assert(C.Format("graphicsViewDistance", 5) == "5" and C.Format("shadowTextureSize", 2048) == "2048")
-assert(select(2, C.Range("RenderScale")) == 1, "max stays 1.0 though the game allows 2.0")
+assert(select(2, C.Range("RenderScale")) == 2, "render scale up to the game's 2.0")
+assert(C.Clamp("RenderScale", 1.33) == 1.35 and C.Clamp("RenderScale", 2.5) == 2 and C.Step("RenderScale", 1, 1) == 1.05 and C.Step("RenderScale", 2, 1) == nil)
+assert(C.Format("RenderScale", 1.35) == "135%")
+assert(C.Get("MSAAQuality") == nil and C.Get("msaaquality") == nil, "MSAA stays out: it needs a restart")
+
+-- Anti-aliasing: only the modes the card supports.
+local aa = C.Get("ffxAntiAliasingMode")
+assert(aa.kind == "choice" and aa.group == "render" and not aa.smart and not aa.heavy and aa.desc and aa.impact == "low")
+assert(W.same(aa.choices, { 0, 1, 2, 3, 4 }) and W.same({ C.Range("ffxAntiAliasingMode") }, { 0, 4 }))
+assert(C.Format("ffxAntiAliasingMode", 0) == "None" and C.Format("ffxAntiAliasingMode", 2) == "FXAA High" and C.Format("ffxAntiAliasingMode", 4) == "CMAA 2")
+assert(C.Step("ffxAntiAliasingMode", 2, 1) == 3 and C.Step("ffxAntiAliasingMode", 2, -1) == 1)
+assert(C.Step("ffxAntiAliasingMode", 4, 1) == nil and C.Step("ffxAntiAliasingMode", 0, -1) == nil)
+for _, build in ipairs({ "low", "ultra", "beyond", "fps" }) do assert(C.BuildPreset(build).ffxAntiAliasingMode == nil, "no preset sets AA: " .. build) end
+local noCmaa = new({ aa = { true, false, false } }).ns.Catalog
+assert(W.same(noCmaa.Get("ffxAntiAliasingMode").choices, { 0, 1, 2 }) and noCmaa.Clamp("ffxAntiAliasingMode", 3) == 2 and noCmaa.Clamp("ffxAntiAliasingMode", 4) == 2)
+assert(noCmaa.Step("ffxAntiAliasingMode", 2, 1) == nil, "CMAA missing: FXAA High is the top")
+local cmaaOnly = new({ aa = { false, true, false } }).ns.Catalog
+assert(W.same(cmaaOnly.Get("ffxAntiAliasingMode").choices, { 0, 3 }) and cmaaOnly.Step("ffxAntiAliasingMode", 0, 1) == 3)
+local noApi = new({ aa = false }).ns.Catalog
+assert(W.same(noApi.Get("ffxAntiAliasingMode").choices, { 0, 1, 2 }) and select(2, noApi.Range("ffxAntiAliasingMode")) == 2)
+local capped = new({ maxScale = 1.5 }).ns.Catalog
+assert(select(2, capped.Range("RenderScale")) == 1.5 and capped.Clamp("RenderScale", 1.8) == 1.5, "the game's lower max caps the range")
 
 -- Presets: the game's quality table, or a straight line without it.
 local low = C.BuildPreset("low")
@@ -405,7 +426,7 @@ assert(#W.ns.db.debugLog == 500)
 W.fire("PLAYER_LOGOUT")
 assert(W.ns.db.debugLog[500]:find("n 600") and W.ns.db.debugLog[1]:find("n 101"), "unrolled in order")
 W.slash("selftest")
-assert(W.said("selftest: 38 of 38 settings readable"))
+assert(W.said("selftest: 39 of 39 settings readable"))
 W.fire("ADDON_ACTION_BLOCKED", "ForeverSmartGraphics", "SetCVar")
 W.fire("ADDON_ACTION_BLOCKED", "ForeverSmartGraphics", "SetCVar")
 local blocked = 0
@@ -831,6 +852,8 @@ local C = W.ns.News.Compare
 local chain = { "1.0.0-beta.1", "1.0.0-beta.2", "1.0.0-rc.0", "1.0.0", "1.0.1", "1.1.0" }
 for i = 1, #chain - 1 do assert(C(chain[i], chain[i + 1]) == -1 and C(chain[i + 1], chain[i]) == 1, chain[i] .. " < " .. chain[i + 1]) end
 assert(C("1.10.0", "1.9.0") == 1 and C("v1.2.0", "1.2.0") == 0 and C("1.0.0-beta.2", "1.0.0-beta.2") == 0)
+W.meta.Version = "v1.0.0-beta.3"
+assert(ns.News.Running() == "1.0.0-beta.3", "the packager's leading v is dropped")
 assert(C("1.0.0-beta", "1.0.0-beta.1") == -1 and C("1.0.0-1", "1.0.0-beta") == -1 and C("1.0.0-beta.10", "1.0.0-beta.9") == 1)
 for _, dev in ipairs({ "@project-version@", "1.4.0-3-gabc1234", "", "1.0", "1.0.0-", "1.0.0-beta..1" }) do
 	assert(C(dev, "1.0.0") == nil and C("1.0.0", dev) == nil, "dev build: " .. dev)
@@ -932,5 +955,20 @@ ns, db, N = newsAt("@project-version@", { version = 1 })
 ns.ShowWhatsNew = function() shown = shown + 1 end
 W.slash("whatsnew")
 assert(db.news == nil and shown == 3, "dev build: opens, writes nothing")
+
+-- Render scale above 100% and anti-aliasing through a profile.
+W = new()
+W.login()
+ns, db = W.ns, W.ns.db
+assert(db.original.ffxAntiAliasingMode == "1", "AA captured on a fresh install")
+db.profiles.default.values.RenderScale, db.profiles.default.values.ffxAntiAliasingMode = 1.35, 3
+ns.Apply.Refresh("test", nil, { user = true })
+assert(W.cvars.RenderScale == "1.35" and W.cvars.ffxAntiAliasingMode == "3", "written and read back")
+assert(ns.Catalog.BuildPreset("ultra").RenderScale == 1 and ns.Catalog.BuildPreset("fps").RenderScale == 0.6, "presets unchanged")
+local saved = W.copy(ForeverSmartGraphicsDB)
+saved.original.ffxAntiAliasingMode = nil
+W = new({ db = saved, cvars = { ffxAntiAliasingMode = "2" } })
+W.login()
+assert(W.ns.db.original.ffxAntiAliasingMode == "2" and W.ns.db.original.RenderScale == saved.original.RenderScale, "an older db gains the new cvar, the rest kept")
 
 io.write("engine_spec: all passed\n")

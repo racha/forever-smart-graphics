@@ -3,7 +3,7 @@
 -- a raise always undoes the last one. Decisions use window medians; each zone remembers its rung position and its best.
 --
 -- API (ns.Smart):
---   Enabled(), SetEnabled(on), SetTarget(fps) 20-240, SetFloor(scale) 0.33-1.0
+--   Enabled(), SetEnabled(on), SetTarget(fps) 20-240, SetFloor(scale) 0.33-1.0, SetScaleMax(scale) 1.0-2.0
 --   State()                 { status, fps, target, goal, ceiling, cap, pos, best, locKey, area = { key, name } | nil,
 --                             goalKey, paceKey, style, last = { cvar, from, to, t } } (one reused table)
 --                           goal = min(target, ceiling x 0.97); ceiling = the highest sustained fps (or maxFPS)
@@ -40,6 +40,8 @@ local GOALS = {
 	fps = { name = "FPS", lowerAt = 0.97, raiseAt = 1.15, cpuFirst = true, lightMin = 0 },
 	balanced = { name = "Balanced", lowerAt = LOWER_AT, raiseAt = RAISE_AT, lightMin = 1 },
 	fidelity = { name = "Fidelity", lowerAt = 0.85, raiseAt = 1.05, lightMin = 1, minScale = 0.90 },
+	-- Eco: the frame cap at the target saves the GPU's idle time between frames; nothing ever goes above the profile.
+	eco = { name = "Eco", lowerAt = LOWER_AT, raiseAt = RAISE_AT, lightMin = 1, eco = true },
 }
 local PACES = {
 	aggressive = { name = "Aggressive", lowerN = 5, lowerDwell = 4, fastLower = 2, raiseDwell = 20, settle = 30, budget = 12 },
@@ -62,6 +64,7 @@ Smart.GOALS = {
 	{ key = "fps", name = "FPS", desc = "Holds your target first; trims effects early." },
 	{ key = "balanced", name = "Balanced", desc = "Best mix of looks and speed for your target." },
 	{ key = "fidelity", name = "Fidelity", desc = "Your target is a minimum; spends spare FPS on looks." },
+	{ key = "eco", name = "Eco", desc = "Saves battery: caps your FPS at the target and never spends spare FPS on looks." },
 }
 Smart.PACES = {
 	{ key = "aggressive", name = "Aggressive", desc = "Changes on the go and reacts fast." },
@@ -104,6 +107,8 @@ TRACKS.up = { "RenderScale", "graphicsSSAO", "graphicsComputeEffects", "graphics
 TRACKS.free = { "graphicsViewDistance", "graphicsShadowQuality", "graphicsEnvironmentDetail", "graphicsDepthEffects", "graphicsGroundClutter", "graphicsLiquidDetail", "sunShafts" }
 -- Writes that stutter (probe P4: render scale ~130 ms, liquid detail up to 123 ms) cost 2 from the budget.
 TRACKS.hitchy = { RenderScale = true, graphicsLiquidDetail = true }
+-- SCALE_MAX is native (100%): resample only matters under it, and the up track passes it last (supersampling costs the
+-- most for its looks). The player's maximum (db.smart.scaleMax, up to 200%) caps Smart's own raises above it.
 local SCALE, LIGHT, SCALE_STEP, SCALE_MAX = "RenderScale", "graphicsLightMode", 0.05, 1.0
 
 -- Measure: a ceiling candidate is the highest 5-minute p90 (of 60 valid seconds at least) that was flat at the top (p50
@@ -134,10 +139,10 @@ LEARN.stepWeight, LEARN.backWithin = 0.5, 0.03
 local LEARN_VERSION = 3
 local WARMUP, PRE_HOLD = 5, 5
 local DEFAULT_PRIOR = 0.5
-local TARGET_MIN, TARGET_MAX, FLOOR_MIN, FLOOR_MAX = 20, 240, 0.33, 1.0
+local LIMITS = { targetMin = 20, targetMax = 240, floorMin = 0.33, floorMax = 1.0, topMin = 1.0, topMax = 2.0 }
 -- Area fps EMAs move slowly (about 20 s) so one hitch or one good second doesn't redefine a place.
 local AREA_ALPHA, AREA_CAP, SUB_SPLIT, SUB_MIN, AREA_SEP = 0.05, 300, 0.15, 60, " · "
-local DEFAULTS = { target = 60, scaleFloor = 0.75 }
+local DEFAULTS = { target = 60, scaleFloor = 0.75, scaleMax = 1.0 }
 local NOTICE = { fightAfter = 5, fightCuts = 3, smoothLow = 0.8, smoothAfter = 30 }
 local SUGGEST = { after = 60, share = 0.7, below = 0.85, snooze = 7 * 86400 }
 local ADJ = { warm = 3, gap = 3, lower = 2, hold = 10, max = 90, away = 30 }
@@ -278,6 +283,12 @@ local function scaleFloor()
 	return minScale and math.max(floor, minScale) or floor
 end
 
+-- The top of Smart's own render scale raises: the player's maximum within the Catalog's range.
+local function scaleTop()
+	local entry = ns.Catalog and ns.Catalog.Get and ns.Catalog.Get(SCALE)
+	return math.min(setting("scaleMax"), entry and entry.max or SCALE_MAX)
+end
+
 -- Measure ---------------------------------------------------------------------------------------------------------
 
 local function capCVar()
@@ -332,6 +343,12 @@ local function ceiling()
 	return nil
 end
 
+-- While Eco holds the frame cap, fps sits at our own cap: that is not the display's limit.
+local function ecoHolds()
+	local smart = cfg()
+	return smart and type(smart.ecoCap) == "table"
+end
+
 local function confirmCeiling()
 	local smart = cfg()
 	local c = smart and smart.ceiling
@@ -341,7 +358,7 @@ local function confirmCeiling()
 end
 
 local function updateCeiling()
-	if longN < MEASURE.ceilMin then return end
+	if longN < MEASURE.ceilMin or ecoHolds() then return end
 	local smart = cfg()
 	if not smart then return end
 	local top, mid = longPercentile(MEASURE.ceilShare), longPercentile(0.5)
@@ -525,6 +542,10 @@ local function buildLadder()
 			add(rungs, cvar, nextValue)
 		end
 	end
+	-- A profile above native: that part goes first under load.
+	if v[SCALE] and v[SCALE] > SCALE_MAX + 0.001 and isKnob(Catalog.Get(SCALE)) then
+		while v[SCALE] > SCALE_MAX + 0.001 do add(rungs, SCALE, round2(math.max(SCALE_MAX, v[SCALE] - SCALE_STEP))) end
+	end
 	local cpuFirst = m.cpuFirst or zoneCpu()
 	if cpuFirst then for _, e in ipairs(TRACKS.cpu) do run(e) end end
 	for _, e in ipairs(TRACKS.down) do run(e) end
@@ -538,15 +559,19 @@ local function buildLadder()
 			if na >= LEARN.reorderN and nb >= LEARN.reorderN and gb > ga * LEARN.reorderBy then rungs[i], rungs[i + 1] = b, a end
 		end
 	end
+	if m.eco then return rungs, ups, bonus end
 	-- Above the profile, the costly knobs (probes at the ceiling): render scale to full, then SSAO, compute, lighting,
 	-- soft shadows last.
 	for cvar, value in pairs(base) do v[cvar] = value end
+	local top = scaleTop()
+	local function scaleUp(to)
+		while v[SCALE] < to - 0.001 do add(ups, SCALE, round2(math.min(to, v[SCALE] + SCALE_STEP))) end
+	end
 	for _, cvar in ipairs(TRACKS.up) do
 		local entry = Catalog.Get(cvar)
 		if isKnob(entry) and v[cvar] ~= nil then
 			if cvar == SCALE then
-				local top = math.min(SCALE_MAX, entry.max or SCALE_MAX)
-				while v[cvar] < top - 0.001 do add(ups, cvar, round2(math.min(top, v[cvar] + SCALE_STEP))) end
+				scaleUp(math.min(SCALE_MAX, top))
 			else
 				while true do
 					local nextValue = Catalog.Step(cvar, v[cvar], 1)
@@ -556,6 +581,8 @@ local function buildLadder()
 			end
 		end
 	end
+	-- Above native, last: up to the player's maximum.
+	if isKnob(Catalog.Get(SCALE)) and v[SCALE] ~= nil then scaleUp(top) end
 	-- The free track: each zero-gain knob at its top, moved as one batch.
 	for _, cvar in ipairs(TRACKS.free) do
 		local entry = Catalog.Get(cvar)
@@ -1411,12 +1438,40 @@ local function dropStaleLearning()
 	end
 end
 
--- Re-reads the goal and pace for this place; a change is announced.
+-- Eco's frame cap: the player's own cap is saved once when Eco takes over and written back once when it stops applying
+-- (another goal or location goal, smart mode off, restore, or a login where it no longer applies). The fps seen under
+-- our cap is then forgotten so it is never taken for the display's limit.
+local function syncEco()
+	local smart, Apply = cfg(), ns.Apply
+	if not (smart and Apply and Apply.Write) then return end
+	local reason = "smart mode (" .. GOALS.eco.name .. ")"
+	if Smart.Enabled() and goalKey(currentLocKey()) == "eco" then
+		if not ecoHolds() then smart.ecoCap = { useMaxFPS = tonumber(getCVar("useMaxFPS")) or 0, maxFPS = tonumber(getCVar("maxFPS")) or 0 } end
+		local target = setting("target")
+		if getCVar("useMaxFPS") ~= "1" then pcall(Apply.Write, "useMaxFPS", 1, reason) end
+		if tonumber(getCVar("maxFPS")) ~= target then pcall(Apply.Write, "maxFPS", target, reason) end
+		return
+	end
+	if not ecoHolds() then return end
+	local saved = smart.ecoCap
+	smart.ecoCap = nil
+	pcall(Apply.Write, "maxFPS", tonumber(saved.maxFPS) or 0, reason)
+	pcall(Apply.Write, "useMaxFPS", tonumber(saved.useMaxFPS) or 0, reason)
+	for i = 1, LONG do longBin[i] = 0 end
+	for i = 1, HIST_BINS do hist[i] = 0 end
+	longN = 0
+end
+
+-- Re-reads the goal and pace for this place; a change is announced. Into Eco, the profile comes back from anything
+-- Smart had raised above it.
 local function syncMode()
+	syncEco()
 	local key = activeMode().name
 	if key == modeShown then return end
+	local intoEco = modeShown ~= nil and activeMode().eco
 	modeShown = key
 	dirtyLadder()
+	if intoEco and Smart.Enabled() then refresh("smart") end
 	notify(true)
 end
 
@@ -1436,6 +1491,7 @@ function Smart.SetEnabled(on)
 	if smart.enabled then warm() end
 	state.status = smart.enabled and "warming" or "off"
 	if smart.enabled then openRegion() end
+	syncEco()
 	refresh("smart")
 	notify(true)
 end
@@ -1444,7 +1500,8 @@ function Smart.SetTarget(fps)
 	local smart = cfg()
 	fps = tonumber(fps)
 	if not (smart and fps) then return nil end
-	smart.target = math.floor(clamp(fps, TARGET_MIN, TARGET_MAX) + 0.5)
+	smart.target = math.floor(clamp(fps, LIMITS.targetMin, LIMITS.targetMax) + 0.5)
+	syncEco()
 	notify(true)
 	return smart.target
 end
@@ -1484,10 +1541,26 @@ function Smart.SetFloor(scale)
 	local smart = cfg()
 	scale = tonumber(scale)
 	if not (smart and scale) then return nil end
-	smart.scaleFloor = round2(clamp(scale, FLOOR_MIN, FLOOR_MAX))
+	smart.scaleFloor = round2(clamp(scale, LIMITS.floorMin, LIMITS.floorMax))
 	dirtyLadder()
 	notify(true)
 	return smart.scaleFloor
+end
+
+-- A lower maximum takes back Smart's own raise above it now (never below the profile's value); remembered positions
+-- past the shorter up track stop at its end when they are applied.
+function Smart.SetScaleMax(scale)
+	local smart = cfg()
+	scale = tonumber(scale)
+	if not (smart and scale) then return nil end
+	local entry = ns.Catalog and ns.Catalog.Get and ns.Catalog.Get(SCALE)
+	smart.scaleMax = round2(math.min(clamp(scale, LIMITS.topMin, LIMITS.topMax), entry and entry.max or LIMITS.topMax))
+	dirtyLadder()
+	local live, base = current(SCALE), ns.Catalog and ns.Catalog.LIST and baseValues()[SCALE]
+	local keep = math.max(smart.scaleMax, base or 0)
+	if Smart.Enabled() and live and live > keep + 0.001 and usable(SCALE) and write(SCALE, live, keep) then rememberPos() end
+	notify(true)
+	return smart.scaleMax
 end
 
 function Smart.State()
@@ -1745,7 +1818,12 @@ ns.On("FSG_READY", function()
 	commands.floor = function(args)
 		local percent = tonumber(argText(args):match("%d+"))
 		local scale = percent and Smart.SetFloor(percent / 100)
-		say(scale and ("Render scale floor " .. math.floor(scale * 100 + 0.5) .. "%") or "Usage: /fsg floor <percent 33-100>")
+		say(scale and ("Render scale minimum " .. math.floor(scale * 100 + 0.5) .. "%") or "Usage: /fsg floor <percent 33-100>")
+	end
+	commands.maxscale = function(args)
+		local percent = tonumber(argText(args):match("%d+"))
+		local scale = percent and Smart.SetScaleMax(percent / 100)
+		say(scale and ("Render scale maximum " .. math.floor(scale * 100 + 0.5) .. "%") or "Usage: /fsg maxscale <percent 100-200>")
 	end
 	commands.goal = function(args)
 		local first, second = argText(args):lower():match("^%s*(%S*)%s*(%S*)")
@@ -1759,7 +1837,7 @@ ns.On("FSG_READY", function()
 			Smart.SetLocationGoal(first, GOALS[second] and second or nil)
 			return say(known .. ": " .. (GOALS[second] and GOALS[second].name or ("follows " .. GOALS[Smart.Goal("")].name)))
 		end
-		say("Smart: " .. activeMode().name .. ". Usage: /fsg goal <fps|balanced|fidelity> or /fsg goal <location> <goal|default>")
+		say("Smart: " .. activeMode().name .. ". Usage: /fsg goal <fps|balanced|fidelity|eco> or /fsg goal <location> <goal|default>")
 	end
 	commands.pace = function(args)
 		local first = argText(args):lower():match("%S+")

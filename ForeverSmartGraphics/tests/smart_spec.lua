@@ -32,7 +32,7 @@ C_Timer = { After = function(delay, fn) timers[#timers + 1] = { T + delay, fn } 
 
 -- Knobs as in the real Catalog (the ladder's and the zero-gain ones); texture filtering is heavy, weather not smart.
 local LIST = {
-	{ cvar = "RenderScale", min = 0.33, max = 1.0, step = 0.05, visual = 4, smart = true },
+	{ cvar = "RenderScale", min = 0.33, max = 2.0, step = 0.05, visual = 4, smart = true },
 	{ cvar = "ResampleQuality", min = 0, max = 3, step = 1, visual = 2, smart = true },
 	{ cvar = "shadowSoft", min = 0, max = 1, step = 1, visual = 2, smart = true },
 	{ cvar = "graphicsSSAO", min = 0, max = 4, step = 1, visual = 2, smart = true },
@@ -65,7 +65,7 @@ local PROFILE = {
 }
 local MAX = {}
 for _, e in ipairs(LIST) do MAX[e.cvar] = e.max end
-MAX.weatherDensity = 3
+MAX.weatherDensity, MAX.RenderScale = 3, 1.0
 
 local ns, profile
 local function copy(t) local out = {} for k, v in pairs(t) do out[k] = v end return out end
@@ -716,6 +716,208 @@ do
 	check("regime: a cut judged across a load change feeds nothing", cut and ns.db.smart.gains.ResampleQuality == nil)
 end
 
+-- Render scale maximum: Smart's own raises stop at min(scaleMax, Catalog max). Above 100% comes last on the way up
+-- (after SSAO, compute, lighting, soft shadows) and first on the way down; a profile's own value is never cut to it.
+local function upsAbove(list)
+	local out = {}
+	for _, w in ipairs(list) do if w[1] == "RenderScale" and w[2] > 1 + 1e-6 and w[2] > w[5] then out[#out + 1] = w end end
+	return out
+end
+do
+	local S = fresh()
+	seeCeiling(74.5)
+	start(S, 75)
+	run(3600, 74.5)
+	check("scale max: the default stops at 100%", near(store.RenderScale, 1.0) and #upsAbove(decisions()) == 0, store.RenderScale)
+end
+do
+	local S = fresh()
+	seeCeiling(74.5)
+	check("scale max: set", S.SetScaleMax(1.5) == 1.5 and ns.db.smart.scaleMax == 1.5)
+	start(S, 75)
+	run(7200, 74.5)
+	local list = decisions()
+	local firstAbove, lastOther = math.huge, 0
+	for i, w in ipairs(list) do
+		if w[1] == "RenderScale" and w[2] > 1 + 1e-6 then firstAbove = math.min(firstAbove, i) end
+		if w[2] > w[5] and (w[1] == "graphicsSSAO" or w[1] == "graphicsComputeEffects" or w[1] == "graphicsLightMode") then lastOther = i end
+	end
+	check("scale max: past 100% only after SSAO, compute and lighting", lastOther > 0 and firstAbove > lastOther, firstAbove .. "/" .. lastOther)
+	check("scale max: stops at 150%", near(store.RenderScale, 1.5) and store.graphicsSSAO == 4 and store.graphicsLightMode == 3, store.RenderScale)
+	local n = #ns.writes
+	run(30, 40)
+	local first = decisions(n)[1]
+	check("scale max: under load the supersampled part goes first", first and first[1] == "RenderScale" and first[2] >= 1 - 1e-6 and first[5] > 1 + 1e-6 and store.graphicsSSAO == 4, first and first[1])
+	S = fresh()
+	seeCeiling(74.5)
+	S.SetScaleMax(1.5)
+	start(S, 75)
+	run(7200, 74.5)
+	check("scale max: reached 150% again", near(store.RenderScale, 1.5))
+	check("scale max: lowering it takes back Smart's extra now", S.SetScaleMax(1.0) == 1.0 and near(store.RenderScale, 1.0))
+	check("scale max: and in what is remembered", near(S.Adjust("city", copy(PROFILE)).RenderScale, 1.0) and ns.db.smart.areas["map:1"].pos > -20)
+end
+do
+	local S = fresh()
+	byCvar.RenderScale.max = 1.25
+	seeCeiling(74.5)
+	check("scale max: clamped to the Catalog", S.SetScaleMax(1.5) == 1.25)
+	-- A saved maximum over what this client's Catalog allows still stops at the Catalog's top.
+	ns.db.smart.scaleMax = 1.5
+	start(S, 75)
+	run(7200, 74.5)
+	check("scale max: stops at the Catalog's 125%", near(store.RenderScale, 1.25), store.RenderScale)
+	byCvar.RenderScale.max = 2.0
+end
+do
+	-- A 135% profile with the default maximum: not cut while there is room, lowered first under load, back to 135%.
+	local profile135 = copy(PROFILE)
+	profile135.RenderScale = 1.35
+	local S = fresh(profile135)
+	seeCeiling(74.5)
+	start(S, 75)
+	run(300, 74.5)
+	check("scale max: a 135% profile is not cut to the maximum", near(store.RenderScale, 1.35) and #writesOf("RenderScale") == 0)
+	check("scale max: a lower maximum leaves the profile's own value", S.SetScaleMax(1.0) == 1.0 and near(store.RenderScale, 1.35))
+	local n = #ns.writes
+	run(60, 40)
+	local first
+	for _, w in ipairs(decisions(n)) do
+		if not first and profile135[w[1]] and w[2] < profile135[w[1]] - 1e-6 then first = w end
+	end
+	check("scale max: the profile's part above 100% is the first cut below the profile", first and first[1] == "RenderScale" and first[2] >= 1 - 1e-6, first and first[1])
+	run(3600, 74.5)
+	check("scale max: back to the profile's 135% with room", near(store.RenderScale, 1.35), store.RenderScale)
+end
+do
+	local S = fresh()
+	check("scale max: clamps", S.SetScaleMax(0.5) == 1.0 and S.SetScaleMax(3) == 2.0 and S.SetScaleMax("x") == nil and S.SetScaleMax(1.234) == 1.23)
+	ns.commands.maxscale({ "150" })
+	check("slash: maxscale", ns.db.smart.scaleMax == 1.5 and ns.logs[#ns.logs] == "Render scale maximum 150%", ns.logs[#ns.logs])
+	ns.commands.maxscale({ "x" })
+	check("slash: maxscale usage", ns.logs[#ns.logs] == "Usage: /fsg maxscale <percent 100-200>")
+	ns.commands.floor({ "75" })
+	check("slash: floor says minimum", ns.logs[#ns.logs] == "Render scale minimum 75%", ns.logs[#ns.logs])
+end
+
+-- Eco: the frame cap at the target (the player's own cap saved once, written back once), never above the profile.
+local function capWrites(from)
+	local n = 0
+	for i = (from or 0) + 1, #ns.writes do
+		local c = ns.writes[i][1]
+		if c == "maxFPS" or c == "useMaxFPS" then n = n + 1 end
+	end
+	return n
+end
+-- A reload: the same saved data and game settings, Smart.lua loaded again.
+local function reload()
+	local db = ns.db
+	ns = newNs()
+	ns.db = db
+	assert(loadfile(SMART))("ForeverSmartGraphics", ns)
+	ns.Fire("FSG_READY")
+	return ns.Smart
+end
+do
+	local S = fresh()
+	store.useMaxFPS, store.maxFPS = "1", 73
+	S.SetGoal("eco")
+	start(S, 60)
+	local saved = ns.db.smart.ecoCap
+	check("eco: caps at the target", tonumber(store.useMaxFPS) == 1 and store.maxFPS == 60 and S.State().style == "Eco · Balanced")
+	check("eco: the player's cap saved (on at 73)", saved and saved.useMaxFPS == 1 and saved.maxFPS == 73)
+	check("eco: the cap is the ceiling, goal = target", S.State().ceiling == 60 and S.State().goal == 60)
+	S.SetTarget(50)
+	check("eco: a target change moves the cap", store.maxFPS == 50 and ns.db.smart.ecoCap.maxFPS == 73)
+	local n = #ns.writes
+	S.SetGoal("balanced")
+	check("eco: another goal writes the player's cap back", store.maxFPS == 73 and tonumber(store.useMaxFPS) == 1 and ns.db.smart.ecoCap == nil and capWrites(n) == 2, capWrites(n))
+	S.SetGoal("fidelity")
+	check("eco: back once only", capWrites(n) == 2)
+	S = fresh()
+	store.useMaxFPS, store.maxFPS = "0", 0
+	S.SetGoal("eco")
+	start(S, 60)
+	check("eco: the player's cap saved (off)", ns.db.smart.ecoCap.useMaxFPS == 0 and ns.db.smart.ecoCap.maxFPS == 0 and store.useMaxFPS == 1)
+	n = #ns.writes
+	S.SetEnabled(false)
+	check("eco: smart off (and restore, which turns it off) writes it back", store.useMaxFPS == 0 and store.maxFPS == 0 and capWrites(n) == 2)
+	S.SetEnabled(false)
+	check("eco: once", capWrites(n) == 2)
+	-- A location goal.
+	S = fresh()
+	store.useMaxFPS, store.maxFPS = "1", 73
+	S.SetGoal("eco")
+	S.SetLocationGoal("outdoor", "balanced")
+	start(S, 60)
+	n = #ns.writes
+	go("map:9", "outdoor", "Fields")
+	check("eco: a location whose goal is not Eco writes it back", store.maxFPS == 73 and capWrites(n) == 2)
+	go("map:1", "city", "Town")
+	check("eco: and caps again where Eco applies", store.maxFPS == 60 and ns.db.smart.ecoCap.maxFPS == 73)
+	-- A reload while Eco holds the cap keeps the player's saved cap, not ours; a login where it no longer applies restores.
+	S = reload()
+	check("eco: a reload keeps the player's cap", ns.db.smart.ecoCap and ns.db.smart.ecoCap.maxFPS == 73 and store.maxFPS == 60)
+	ns.db.smart.goal = "balanced"
+	n = 0
+	S = reload()
+	check("eco: a login where Eco no longer applies writes it back", store.maxFPS == 73 and ns.db.smart.ecoCap == nil and capWrites() == 2, capWrites())
+end
+do
+	-- At the cap with a profile below maximum, over a long run: nothing raised (no up track, no free track, no
+	-- maximum); the cap is not taken for a display limit.
+	local S = fresh()
+	S.SetScaleMax(1.5)
+	S.SetGoal("eco")
+	start(S, 60)
+	run(3600, 60)
+	local up = 0
+	for _, w in ipairs(decisions()) do if w[1] ~= "maxFPS" and w[1] ~= "useMaxFPS" and w[2] > w[5] then up = up + 1 end end
+	check("eco: nothing above the profile over an hour at the cap", up == 0 and near(store.RenderScale, 1.0) and store.graphicsViewDistance == 5, up)
+	check("eco: our cap is not learned as the display's limit", ns.db.smart.ceiling == nil)
+	-- Low fps lowers; with room again it comes back to the profile and no further.
+	local n = #ns.writes
+	run(600, 40)
+	local cuts = 0
+	for _, w in ipairs(decisions(n)) do if w[2] < w[5] then cuts = cuts + 1 end end
+	check("eco: low fps lowers", cuts >= 1 and store.shadowSoft == 0)
+	run(5400, 60)
+	local back = true
+	for cvar, v in pairs(PROFILE) do if type(v) == "number" and not near(tonumber(store[cvar]), v) then back = false end end
+	check("eco: recovery returns to the profile and no further", back and store.maxFPS == 60)
+	S.SetGoal("balanced")
+	run(20, 50)
+	check("eco: leaving it, the 5 min under our cap are forgotten", S.State().ceiling == nil and near(S.State().goal, 60), S.State().ceiling)
+end
+do
+	-- In combat the cap write waits for the fight to end (held by the engine).
+	local S = fresh()
+	store.useMaxFPS, store.maxFPS = "1", 73
+	start(S, 60)
+	ns.InCombat = function() return true end
+	S.SetGoal("eco")
+	check("eco: in combat the cap write is held", store.maxFPS == 73 and #ns.held >= 1 and ns.held[#ns.held][3] == "smart mode (Eco)")
+	ns.InCombat = function() return false end
+end
+do
+	-- The old Efficient saved cap still restores once, and the two saved caps don't touch each other.
+	local S = fresh()
+	store.useMaxFPS, store.maxFPS = "1", 60
+	ns.db.smart.capSaved = { useMaxFPS = 0, maxFPS = 144 }
+	ns.db.smart.ecoCap = { useMaxFPS = 1, maxFPS = 73 }
+	ns.db.smart.enabled, ns.db.smart.goal = true, "eco"
+	S = reload()
+	check("eco: the old Efficient cap goes back once", ns.db.smart.capSaved == nil)
+	check("eco: and Eco keeps the player's own saved cap", ns.db.smart.ecoCap.maxFPS == 73 and ns.db.smart.ecoCap.useMaxFPS == 1 and store.maxFPS == 60 and store.useMaxFPS == 1)
+	local n = #ns.writes
+	S = reload()
+	check("eco: nothing more on the next login", capWrites(n) == 0, capWrites(n))
+	ns.commands.goal({ "eco" })
+	check("slash: goal eco", ns.db.smart.goal == "eco" and ns.logs[#ns.logs] == "Smart goal: Eco")
+	ns.commands.goal({ "raid", "eco" })
+	check("slash: goal per location eco", S.Goal("raid") == "eco")
+end
+
 -- 10. Nothing in combat; the fight notice offers the next rungs; the player's buttons write.
 do
 	local S = fresh()
@@ -798,7 +1000,7 @@ do
 	local S = fresh()
 	check("goal/pace: defaults", S.Goal() == "balanced" and S.Pace() == "balanced" and S.State().style == "Balanced · Balanced")
 	check("goal/pace: unknown refused", S.SetGoal("turbo") == nil and S.SetPace("quality") == nil)
-	check("goal/pace: lists", #S.GOALS == 3 and S.GOALS[3].desc == "Your target is a minimum; spends spare FPS on looks." and #S.PACES == 3 and S.PACES[3].desc == "Changes only when you enter a new area.")
+	check("goal/pace: lists", #S.GOALS == 4 and S.GOALS[3].desc == "Your target is a minimum; spends spare FPS on looks." and #S.PACES == 3 and S.PACES[3].desc == "Changes only when you enter a new area.")
 	S.SetGoal("fps")
 	check("location goal: override wins", S.SetLocationGoal("city", "fidelity") and S.Goal("city") == "fidelity" and S.Goal("outdoor") == "fps")
 	S.SetLocationGoal("city", nil)

@@ -245,6 +245,9 @@ local function buildCreate(choices)
 		choice.check:SetTexCoord(0.25, 0.5, 0, 1)
 		choice.check:SetAllPoints(radio)
 		choice:SetHighlightTexture("Interface\\Buttons\\UI-RadioButton", "ADD")
+		local glow = choice:GetHighlightTexture()
+		glow:SetTexCoord(0.5, 0.75, 0, 1)
+		glow:SetAllPoints(radio)
 		choice.label = choice:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
 		choice.label:SetPoint("LEFT", radio, "RIGHT", 6, 0)
 		choice.note = choice:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
@@ -454,6 +457,7 @@ local function editTip(entry, own, source, now)
 	lines[#lines + 1] = dim(own and L.OWN_TIP or string.format(L.INHERIT_TIP, L.INHERIT_SOURCE[source] or L.INHERIT_SOURCE[ORIGINAL]))
 	local limit = ns.db.limits and ns.db.limits[entry.cvar]
 	if limit then lines[#lines + 1] = dim(string.format(L.LIMIT, ns.Catalog.Format(entry.cvar, limit))) end
+	if entry.kind == "scale" and entry.max <= 1 then lines[#lines + 1] = dim(string.format(L.SCALE_LIMIT_TIP, ns.Catalog.Format(entry.cvar, entry.max))) end
 	lines[#lines + 1] = dim(UI.ControlKind(entry) == "dropdown" and UI.ByMode(L.CHOICE_TIP, L.CHOICE_TIP_MOUSE) or UI.ByMode(L.STEPPER_TIP, L.SLIDER_TIP_MOUSE))
 	if entry.heavy then lines[#lines + 1] = dim(L.HEAVY_TIP) end
 	if own then lines[#lines + 1] = dim(profileOf().id == "default" and L.CLEAR_DEFAULT_TIP or L.CLEAR_TIP) end

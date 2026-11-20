@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0-beta.4 — 2026-11-20
+
+- New: render scale above 100%. A profile's Render scale slider now goes up to the game's own maximum, as high as 200%, for a sharper picture. Where the game stops at 100% on your display, the tooltip says so.
+- New: an Anti-aliasing setting in a profile's Render group: None, FXAA Low, FXAA High, and CMAA where your graphics card supports it.
+- New: Smart mode has a Render scale maximum next to its minimum (`/fsg maxscale <percent>`). It stays at 100% until you raise it, and Smart mode goes above 100% last, when everything else is already at its best.
+- New: an Eco goal for Smart mode. It caps your FPS at your target to save battery and never spends spare FPS on looks. Your own FPS cap comes back when you leave Eco.
+- Fixed: the hover highlight in the New profile window.
+- Fixed: the What's new window showed the version with a stray "v".
+- Thanks to pwn4321 on Reddit for suggesting render scale above 100% and the FXAA option.
+
 ## 1.0.0-beta.3 — 2026-11-19
 
 - New: hold a profile from a macro. `/fsg profile <name>` uses that profile everywhere, `/fsg profile auto` goes back to switching by location, and `/fsg profile toggle <name>` does both from one button. Your location setup is left alone, and Smart mode keeps adjusting on top of the held profile.

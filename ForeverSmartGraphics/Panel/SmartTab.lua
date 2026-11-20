@@ -1,8 +1,8 @@
 -- Forever Smart Graphics "Smart mode" page. Row pattern adapted from Forever Controller
 -- Tweaks' Tweaks tab (MIT, same author). What Smart mode does; its switch, target, goal and pace (each with its line
--- under it) and render scale floor; what it is doing right now; what it learned per location (Save as profile, Reset,
--- Reset all) and the places that lagged, worst first (Forget), both folded. A, X and a right-click are shortcuts for a
--- row's buttons. Find my best settings lives on Overview. Without Smart.lua loaded the page says so.
+-- under it) and render scale minimum and maximum; what it is doing right now; what it learned per location (Save as
+-- profile, Reset, Reset all) and the places that lagged, worst first (Forget), both folded. A, X and a right-click
+-- are shortcuts for a row's buttons. Find my best settings lives on Overview. Without Smart.lua loaded the page says so.
 local _, ns = ...
 local UI = ns.UI
 local L = UI.L
@@ -10,6 +10,7 @@ local N = UI.N
 
 local TARGET_MIN, TARGET_MAX, TARGET_STEP = 20, 240, 5
 local FLOOR_MIN, FLOOR_MAX, FLOOR_STEP = 33, 100, 5
+local SCALE_MAX_MIN = 100
 local LINE_H, LAG_SHOWN, FIGHT_DROP, FINISH_AFTER = 18, 10, 0.1, 30
 local LEARNED_X, LAG_X, HISTORY = 192, 222, 3
 
@@ -36,6 +37,32 @@ local function nudgeTarget(dir)
 	local value = target() + dir * TARGET_STEP
 	if value < TARGET_MIN or value > TARGET_MAX then return false end
 	setTarget(value)
+end
+
+-- This machine's highest render scale in percent; 100 when the Catalog knows nothing higher.
+local function machineMax()
+	if not ns.Catalog.Range then return SCALE_MAX_MIN end
+	local _, high = ns.Catalog.Range("RenderScale")
+	return math.floor((tonumber(high) or 1) * 100 + 0.5)
+end
+
+-- A display that tops out at 100% shows the row locked, so the player can read why it cannot go higher.
+local function scaleMaxLocked() return machineMax() <= SCALE_MAX_MIN end
+local function scaleMaxPercent() return math.max(SCALE_MAX_MIN, math.min(machineMax(), math.floor((ns.db.smart.scaleMax or 1) * 100 + 0.5))) end
+
+local function setScaleMax(percent)
+	if scaleMaxLocked() then return end
+	Smart.SetScaleMax(math.max(SCALE_MAX_MIN, math.min(machineMax(), percent)) / 100)
+	refresh()
+end
+
+local function nudgeScaleMax(dir)
+	if scaleMaxLocked() then return false end
+	local percent = scaleMaxPercent()
+	local value = dir > 0 and (math.floor(percent / FLOOR_STEP) + 1) * FLOOR_STEP or (math.ceil(percent / FLOOR_STEP) - 1) * FLOOR_STEP
+	value = math.max(SCALE_MAX_MIN, math.min(machineMax(), value))
+	if value == percent then return false end
+	setScaleMax(value)
 end
 
 local function setFloor(percent)
@@ -112,6 +139,8 @@ local function build(content, win)
 		if UI.SmartList(kind) then page[kind] = UI.SmartPicker(window, content, kind, refresh) end
 	end
 	page.floor = sliderRow(content, L.FLOOR, FLOOR_MIN, FLOOR_MAX, 1, nudgeFloor, function(value) setFloor(value < FLOOR_STEP * 7 and FLOOR_MIN or math.floor(value / FLOOR_STEP + 0.5) * FLOOR_STEP) end)
+	page.scaleMax = sliderRow(content, L.SCALE_MAX, SCALE_MAX_MIN, SCALE_MAX_MIN, 1, nudgeScaleMax, function(value) setScaleMax(math.floor(value / FLOOR_STEP + 0.5) * FLOOR_STEP) end)
+	page.scaleMax:Hide()
 	page.nowSection = UI.Section(content, L.RIGHT_NOW)
 	page.lines = {}
 	for i = 1, 4 do page.lines[i] = UI.Description(content, i == 1 and "GameFontNormal" or i == 4 and "GameFontDisableSmall" or "GameFontHighlight") end
@@ -272,6 +301,17 @@ local function refreshPage(content)
 	content.floor.slider:Set(floor, floor .. "%")
 	flow:Add(content.floor, N.ROW_H)
 	nodes[#nodes + 1] = sliderNode(content.floor, L.FLOOR, L.FLOOR_TIP, nudgeFloor)
+	if Smart.SetScaleMax then
+		local row, percent, locked = content.scaleMax, scaleMaxPercent(), scaleMaxLocked()
+		row.slider:SetRange(SCALE_MAX_MIN, math.max(SCALE_MAX_MIN, machineMax()), 1)
+		row.slider:Set(percent, percent .. "%")
+		UI.SetRowEnabled(row, not locked)
+		flow:Add(row, N.ROW_H)
+		local tip = locked and { title = L.SCALE_MAX, lines = { L.SCALE_MAX_LOCKED_TIP }, side = "above" }
+		nodes[#nodes + 1] = tip and rowNode(row, tip, { noSide = true, onDir = nudgeScaleMax }) or sliderNode(row, L.SCALE_MAX, L.SCALE_MAX_TIP, nudgeScaleMax)
+	else
+		content.scaleMax:Hide()
+	end
 
 	flow:Add(content.nowSection, N.SECTION_H, 0)
 	if on then

@@ -6,6 +6,7 @@ local Catalog = {}
 ns.Catalog = Catalog
 
 local RENDER_SCALE = "RenderScale"
+local AA = "ffxAntiAliasingMode"
 local EPSILON = 1e-6
 local OFF_ON = { [0] = "Off", "On" }
 local LOW_ULTRA = { [0] = "Low", "Fair", "Good", "High", "Ultra" }
@@ -42,8 +43,9 @@ Catalog.LIST = {
 	level("graphicsViewDistance", "View distance", 9, { smart = true, visual = 4 }),
 	level("graphicsEnvironmentDetail", "Environment detail", 9, { smart = true, visual = 3 }),
 	level("graphicsGroundClutter", "Ground clutter", 9, { smart = true, visual = 2 }),
-	{ cvar = RENDER_SCALE, group = "render", label = "Render scale", kind = "scale", min = 0.33, max = 1.0, step = 0.05, smart = true, visual = 4 },
+	{ cvar = RENDER_SCALE, group = "render", label = "Render scale", kind = "scale", min = 0.33, max = 2.0, step = 0.05, smart = true, visual = 4 },
 	{ cvar = "ResampleQuality", group = "render", label = "Resample quality", kind = "level", min = 0, max = 3, step = 1, smart = true, visual = 2, names = { [0] = "Point", "Bilinear", "Bicubic", "FidelityFX" } },
+	{ cvar = AA, group = "render", label = "Anti-aliasing", kind = "choice", visual = 2, names = { [0] = "None", "FXAA Low", "FXAA High", "CMAA", "CMAA 2" } },
 	{ cvar = "textureFilteringMode", group = "render", label = "Texture filtering", kind = "level", min = 0, max = 5, step = 1, heavy = true, visual = 1, names = { [0] = "Bilinear", "Trilinear", "2x Anisotropic", "4x Anisotropic", "8x Anisotropic", "16x Anisotropic" } },
 	hidden("shadowSoft", "Soft shadows", 0, 1, 1, { smart = true, visual = 2, names = OFF_ON }),
 	hidden("groundEffectDensity", "Grass density", 16, 256, 16, { smart = true, visual = 2 }),
@@ -85,8 +87,9 @@ local INFO = {
 	graphicsViewDistance = { "high", "estimate", "How far away the world is drawn before it fades into the horizon. One of the costliest settings outdoors." },
 	graphicsEnvironmentDetail = { "medium", "estimate", "How much scenery is drawn and in how much detail: trees, rocks and props, and how far out they stay detailed." },
 	graphicsGroundClutter = { "medium", "estimate", "Grass, flowers and small plants on the ground, and how far away they still show." },
-	RenderScale = { "very high", "probe", "The resolution the 3D world is drawn at before it is scaled to your screen. Lower is much faster but blurrier; the interface stays sharp." },
-	ResampleQuality = { "medium", "probe", "How the world is scaled to your screen when render scale is below 100%. FidelityFX keeps it sharpest; Point is blocky." },
+	RenderScale = { "very high", "probe", "The resolution the 3D world is drawn at before it is scaled to your screen. Lower is much faster but blurrier; above 100% is sharper and costs a lot of FPS. The interface stays sharp." },
+	ResampleQuality = { "medium", "probe", "How the world is scaled to your screen when render scale is not 100%. FidelityFX keeps it sharpest; Point is blocky." },
+	ffxAntiAliasingMode = { "low", "estimate", "Smooths jagged edges on the finished picture. FXAA is the cheapest; CMAA is sharper where your graphics card supports it. Multisampling (MSAA) needs a restart, so it stays in the game's own Graphics options." },
 	textureFilteringMode = { "low", "estimate", "How sharp surfaces stay when seen at a slant, such as roads and floors stretching away. Changing it reloads textures." },
 	shadowSoft = { "high", "probe", "Soft, natural shadow edges instead of hard ones. Looks nicer but costs about a tenth of your FPS." },
 	groundEffectDensity = { "medium", "estimate", "How thick grass and small plants grow. Higher is a fuller, lusher ground." },
@@ -128,7 +131,7 @@ for _, cvar in ipairs({ "gxMaxFrameLatency", "gxapi", "physicsLevel", "gxAdapter
 local byLower = {}
 for _, entry in ipairs(Catalog.LIST) do byLower[entry.cvar:lower()] = entry end
 
--- The game's own render scale range, kept inside 0.33..1.0.
+-- The game's own render scale range, kept inside 0.33..2.0.
 do
 	local entry = byLower[RENDER_SCALE:lower()]
 	local okMin, low = pcall(GetMinRenderScale)
@@ -136,6 +139,18 @@ do
 	low, high = okMin and tonumber(ns.plain(low)), okMax and tonumber(ns.plain(high))
 	if low and low > entry.min and low < entry.max then entry.min = low end
 	if high and high < entry.max and high > entry.min then entry.max = high end
+end
+
+-- Only the modes this graphics card offers, as the game's own menu does; FXAA unless the client says no.
+do
+	local entry = byLower[AA:lower()]
+	local ok, fxaa, cmaa, cmaa2 = pcall(AntiAliasingSupported)
+	if not ok then fxaa, cmaa, cmaa2 = true, false, false end
+	local choices = { 0 }
+	if ns.plain(fxaa) ~= false then choices[2], choices[3] = 1, 2 end
+	if ns.plain(cmaa) then choices[#choices + 1] = 3 end
+	if ns.plain(cmaa2) then choices[#choices + 1] = 4 end
+	entry.choices, entry.min, entry.max = choices, choices[1], choices[#choices]
 end
 
 function Catalog.Get(cvar)

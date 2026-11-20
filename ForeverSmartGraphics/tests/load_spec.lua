@@ -69,7 +69,7 @@ function GetZoneText() return place.zone end
 function UnitAffectingCombat() return W.combat end
 function GetUnitSpeed() return 0 end
 function GetMinRenderScale() return 0.33 end
-function GetMaxRenderScale() return 1 end
+function GetMaxRenderScale() return 2 end
 function GetGraphicsCVarValueForQualityLevel(_, level) return math.floor(level / 2) end
 function IsGraphicsCVarValueSupported() return 0 end
 time = os.time
@@ -178,7 +178,32 @@ W.fps = 140
 W.advance(120, 1 / 140)
 check(knobSum() > lowered, "smart raised settings again with headroom")
 check(#ns.Smart.Areas() >= 1, "area memory recorded")
+check(tonumber(W.cvars.RenderScale) <= 1 + 1e-6, "smart never raises render scale above 100% on its own (" .. W.cvars.RenderScale .. ")")
 W.slash("smart off")
+
+-- Render scale above 100% and anti-aliasing are the player's own choice in a profile; Smart lowers the extra first.
+local sharp = ns.Apply.Active().profileId
+ns.Profiles.SetValue(sharp, "RenderScale", 1.35)
+ns.Profiles.SetValue(sharp, "ffxAntiAliasingMode", 2)
+W.advance(1)
+check(tonumber(W.cvars.RenderScale) == 1.35 and W.cvars.ffxAntiAliasingMode == "2", "a profile writes 135% render scale and FXAA High")
+W.slash("smart on")
+W.fps = 40
+W.advance(40, 1 / 40)
+check(tonumber(W.cvars.RenderScale) < 1.35 and W.cvars.ffxAntiAliasingMode == "2", "smart lowers a supersampled profile and leaves anti-aliasing alone (" .. W.cvars.RenderScale .. ")")
+
+-- The Eco goal caps FPS at the target and hands the player's own cap back when it ends.
+local capBefore, capOnBefore = W.cvars.maxFPS, W.cvars.useMaxFPS
+W.slash("goal eco")
+W.advance(1)
+check(tonumber(W.cvars.maxFPS) == db.smart.target and W.cvars.useMaxFPS == "1", "the Eco goal caps FPS at the target (" .. tostring(W.cvars.maxFPS) .. ")")
+W.slash("goal balanced")
+W.advance(1)
+check(W.cvars.maxFPS == capBefore and W.cvars.useMaxFPS == capOnBefore, "leaving Eco puts the player's own cap back")
+W.slash("smart off")
+ns.Profiles.SetValue(sharp, "RenderScale", nil)
+ns.Profiles.SetValue(sharp, "ffxAntiAliasingMode", nil)
+W.advance(1)
 
 -- Find my best settings.
 W.slash("findbest 60")

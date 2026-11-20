@@ -130,6 +130,7 @@ local function bool(value, default) if type(value) == "boolean" then return valu
 local function within(value, min, max, default) return finite(value) and value >= min and value <= max and value or default end
 
 ns.SMART_TARGET, ns.SMART_FLOOR = { 20, 240, 60 }, { 0.33, 1.0, 0.75 }
+ns.SMART_SCALE_MAX = { 1.0, 2.0, 1.0 }
 local LOCATION_KEYS = { "city", "outdoor", "dungeon", "raid", "battleground", "arena" }
 local OVERRIDE_PATTERNS = { "^map:%d+$", "^instance:%d+$" }
 -- Not in the Catalog (never in a profile or preset) but written by Apply or Smart's Efficient mode, so restorable.
@@ -253,6 +254,8 @@ local function repairSmart(db, fix)
 	smart.enabled = bool(smart.enabled, false)
 	smart.target = within(smart.target, target[1], target[2], target[3])
 	smart.scaleFloor = within(smart.scaleFloor, floor[1], floor[2], floor[3])
+	local top = ns.SMART_SCALE_MAX
+	smart.scaleMax = within(smart.scaleMax, top[1], top[2], top[3])
 	smart.learned = repairLearned(smart.learned, fix)
 	-- Once: the old style (and per-place styles) become goal + pace. Efficient's frame cap goes back to the original.
 	if not db.migrations.goalPace then
@@ -427,7 +430,7 @@ end)
 
 local HELP = "/fsg opens the window (so do the addon compartment and the minimap button). Commands: status"
 	.. " | use <profile name> (that profile everywhere) | profile <name>|auto|toggle <name> (hold a profile, for macros) | restore (your original settings, switching off) | applynow (a waiting texture change)"
-	.. " | smart on|off | target <fps> | floor <percent> | log on|off (settings changes in chat) | log smart on|off (Smart mode steps too) | whatsnew (what changed in this version) | debug on|off | selftest | help"
+	.. " | smart on|off | target <fps> | floor <percent> | maxscale <percent> | log on|off (settings changes in chat) | log smart on|off (Smart mode steps too) | whatsnew (what changed in this version) | debug on|off | selftest | help"
 
 function ns.commands.help() ns.log(HELP) end
 

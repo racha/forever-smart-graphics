@@ -15,7 +15,7 @@ Prefer full control? Build your own profiles and have them switch by themselves 
 ## What it does
 
 - **Smart mode**: pick a target FPS and leave it on. It lowers the settings you notice least first, never touches the ones that gain nothing on your machine, and raises quality again when there is room.
-  - **Goal**: FPS, Balanced or Fidelity.
+  - **Goal**: FPS, Balanced, Fidelity or Eco (caps FPS at your target to save battery).
   - **Pace**: Aggressive (changes on the go, fast), Balanced (changes on the go, calmly) or Smooth (changes only when you enter a new area).
   - It ignores short stutters, remembers every zone, and changes nothing in combat.
 - **Profiles**: every graphics setting, including hidden engine settings the Options menu doesn't show. Start from a preset (Low, Fair, Good, High, Ultra, Beyond Ultra, Max FPS), from your current settings, or empty.
@@ -56,8 +56,8 @@ Get it from CurseForge, or download the zip from Releases and unzip it into `Wor
 |---|---|
 | `/fsg` | open or close the window |
 | `/fsg status` | where you are, the active profile, Smart state, FPS |
-| `/fsg smart on\|off`, `/fsg target <fps>`, `/fsg floor <percent>` | Smart mode |
-| `/fsg goal <fps\|balanced\|fidelity>`, `/fsg pace <aggressive\|balanced\|smooth>` | Smart mode's goal and pace |
+| `/fsg smart on\|off`, `/fsg target <fps>`, `/fsg floor <percent>`, `/fsg maxscale <percent>` | Smart mode, with its lowest and highest render scale |
+| `/fsg goal <fps\|balanced\|fidelity\|eco>`, `/fsg pace <aggressive\|balanced\|smooth>` | Smart mode's goal and pace |
 | `/fsg findbest <fps>`, `/fsg finish`, `/fsg stop` | Find my best settings |
 | `/fsg use <profile name>` | use that profile everywhere |
 | `/fsg profile <name>`, `/fsg profile auto`, `/fsg profile toggle <name>` | hold a profile everywhere until you go back to automatic (for macros) |

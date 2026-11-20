@@ -60,7 +60,8 @@ end
 
 function News.Running()
 	local version = metadata("Version")
-	return parse(version) and version or nil
+	-- The packager writes the tag ("v1.0.0") into the toc; players see and we store the plain number.
+	return parse(version) and (version:gsub("^v", "", 1)) or nil
 end
 
 function News.Website() return metadata("X-Website") end

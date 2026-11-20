@@ -4,6 +4,7 @@
 --   W.clamp[name] = n caps a write at n, like a client limit.
 --   W.cascade[name] = fn(value) runs after a write, like a graphics* preset rewriting engine cvars.
 --   W.instance / W.resting / W.mapID / W.zone / W.subzone   what the location APIs return.
+--   opts.maxScale / opts.aa   what GetMaxRenderScale and AntiAliasingSupported return (read when the Catalog loads).
 --   W.meta[field]         what C_AddOns.GetAddOnMetadata returns (Version, X-Website).
 --   W.writes              every SetCVar call in order: { cvar, value }.
 --   W.run(seconds, fps)   advances the clock frame by frame, running OnUpdate, tickers and timers.
@@ -19,7 +20,7 @@ local DEFAULT_CVARS = {
 	wmoLodDist = "650", horizonStart = "1500", lodObjectCullSize = "20", lodObjectFadeScale = "90", sunShafts = "1",
 	weatherDensity = "2", ffxglow = "1", reflectionMode = "1", shadowTextureSize = "2048", vrsValar = "0", shadowrt = "0",
 	shadowNumCascades = "3", assaoBlurPassCount = "2", ResampleAlwaysSharpen = "0", doodadLodScale = "100",
-	useTargetFPS = "1", targetFPS = "60", maxFPS = "73", useMaxFPS = "1",
+	ffxAntiAliasingMode = "1", useTargetFPS = "1", targetFPS = "60", maxFPS = "73", useMaxFPS = "1",
 }
 
 return function(dir, opts)
@@ -62,7 +63,9 @@ return function(dir, opts)
 	function UnitAffectingCombat() return W.combat end
 	function GetBuildInfo() return "1.60.1", "12345", "", 16001 end
 	function GetMinRenderScale() return 0.33 end
-	function GetMaxRenderScale() return 2.0 end
+	function GetMaxRenderScale() return opts.maxScale or 2.0 end
+	-- opts.aa = { fxaa, cmaa, cmaa2 } (default all supported); false removes the API.
+	AntiAliasingSupported = opts.aa ~= false and function() return (table.unpack or unpack)(opts.aa or { true, true, true }) end or nil
 	function GetInstanceInfo() return (table.unpack or unpack)(W.instance) end
 	function IsResting() return W.resting end
 	function GetRealZoneText() return W.zone end
