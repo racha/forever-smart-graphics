@@ -111,6 +111,15 @@ check(db.original.RenderScale == "0.75", "original captured")
 check(#writes == 0, "Default writes nothing at login (" .. #writes .. ")")
 check(ns.Location.Current().key == "city", "Thunder Bluff resting = city")
 
+-- A change made in the game's own Options is the player's: nothing set up, so the addon keeps it.
+C_CVar.SetCVar("graphicsViewDistance", "8")
+writes = {}
+ns.Apply.Refresh("zone")
+W.advance(2)
+check(W.cvars.graphicsViewDistance == "8" and #writes == 0, "an Options change survives a refresh on a fresh install")
+C_CVar.SetCVar("graphicsViewDistance", "5")
+writes = {}
+
 -- Profiles and switching.
 local fps = ns.Profiles.FromPreset("fps")
 local beyond = ns.Profiles.FromPreset("beyond")
@@ -122,7 +131,8 @@ check(tonumber(W.cvars.RenderScale) == 0.6, "City → Max FPS writes render scal
 place.resting, place.map, place.zone = false, 1412, "Mulgore"
 fire("PLAYER_UPDATE_RESTING")
 fire("ZONE_CHANGED_NEW_AREA")
-W.advance(2)
+-- Leaving a city without a loading screen counts after a short dwell.
+W.advance(3.5)
 check(ns.Location.Current().key == "outdoor", "left the city")
 check(tonumber(W.cvars.RenderScale) == 0.75, "open world back to the original render scale")
 
@@ -137,7 +147,12 @@ check(not ns.Apply.Pending(), "no toast needed after a loading screen")
 W.advance(5)
 -- Announcing is off by default; the countdown path needs it on.
 db.options.announce = true
-ns.Profiles.SetValue(beyond, "graphicsTextureResolution", 1)
+-- The player's own edit applies at once; the same change from a profile switch waits.
+ns.Profiles.SetValue(beyond, "graphicsTextureResolution", 0)
+W.advance(0.2)
+check(W.cvars.graphicsTextureResolution == "0" and not ns.Apply.Pending(), "the player's own texture edit applies at once")
+ns.Profiles.Get(beyond).values.graphicsTextureResolution = 1
+ns.Apply.Refresh("zone")
 W.advance(0.2)
 local pending = ns.Apply.Pending()
 check(pending and pending.values.graphicsTextureResolution == 1, "texture change queued for the toast")
@@ -151,7 +166,7 @@ check(ns.Location.Current().key == "raid" and ns.Apply.Active().profileId == "de
 ns.Profiles.SetValue("default", "vrsValar", 2)
 W.advance(1)
 ns.Apply.Refresh("again")
-check(db.unsupported.vrsValar, "ignored writes mark the cvar unsupported")
+check(not db.unsupported.vrsValar and db.limits.vrsValar == 0, "a refused value is a limit, not an unsupported setting")
 
 -- Smart mode.
 travel("none", nil, 1412, 0)
@@ -167,9 +182,17 @@ local function knobSum()
 	end
 	return sum
 end
+-- A GPU-bound scene: fps rises as settings come down (a scene that ignores cuts is handed its settings back).
+local function load(seconds, base, ref)
+	for _ = 1, seconds do
+		W.fps = base * (1 + 3 * math.max(0, ref - knobSum()))
+		W.advance(1, 1 / W.fps)
+	end
+end
 local start = knobSum()
-W.fps = 40
-W.advance(40, 1 / 40)
+local before = {}
+for _, entry in ipairs(ns.Catalog.LIST) do before[entry.cvar] = W.cvars[entry.cvar] end
+load(40, 40, start)
 local lowered = knobSum()
 check(lowered < start, "smart lowered settings at low fps")
 check(tonumber(W.cvars.RenderScale) >= db.smart.scaleFloor - 1e-6, "render scale never drops below the 75% default floor (" .. W.cvars.RenderScale .. ")")
@@ -180,6 +203,21 @@ check(knobSum() > lowered, "smart raised settings again with headroom")
 check(#ns.Smart.Areas() >= 1, "area memory recorded")
 check(tonumber(W.cvars.RenderScale) <= 1 + 1e-6, "smart never raises render scale above 100% on its own (" .. W.cvars.RenderScale .. ")")
 W.slash("smart off")
+W.advance(1)
+local left = {}
+for _, entry in ipairs(ns.Catalog.LIST) do
+	if not IGNORED[entry.cvar] and tonumber(W.cvars[entry.cvar]) ~= tonumber(before[entry.cvar]) then left[#left + 1] = entry.cvar end
+end
+check(#left == 0, "Smart mode off leaves no trace: " .. table.concat(left, ", "))
+
+-- Turning the addon off turns Smart mode off first; Smart mode on turns the addon on.
+W.slash("smart on")
+ns.Apply.SetSwitching(false)
+check(not ns.Smart.Enabled() and db.options.switching == false, "turning the addon off turns Smart mode off")
+W.slash("smart on")
+check(ns.Smart.Enabled() and db.options.switching == true, "Smart mode on turns the addon on")
+W.slash("smart off")
+W.advance(1)
 
 -- Render scale above 100% and anti-aliasing are the player's own choice in a profile; Smart lowers the extra first.
 local sharp = ns.Apply.Active().profileId
@@ -188,8 +226,7 @@ ns.Profiles.SetValue(sharp, "ffxAntiAliasingMode", 2)
 W.advance(1)
 check(tonumber(W.cvars.RenderScale) == 1.35 and W.cvars.ffxAntiAliasingMode == "2", "a profile writes 135% render scale and FXAA High")
 W.slash("smart on")
-W.fps = 40
-W.advance(40, 1 / 40)
+load(40, 40, knobSum())
 check(tonumber(W.cvars.RenderScale) < 1.35 and W.cvars.ffxAntiAliasingMode == "2", "smart lowers a supersampled profile and leaves anti-aliasing alone (" .. W.cvars.RenderScale .. ")")
 
 -- The Eco goal caps FPS at the target and hands the player's own cap back when it ends.
@@ -203,6 +240,17 @@ check(W.cvars.maxFPS == capBefore and W.cvars.useMaxFPS == capOnBefore, "leaving
 W.slash("smart off")
 ns.Profiles.SetValue(sharp, "RenderScale", nil)
 ns.Profiles.SetValue(sharp, "ffxAntiAliasingMode", nil)
+W.advance(1)
+
+-- Find my best settings at a display that tops out at the target changes nothing.
+local capOn, cap, calm = W.cvars.useMaxFPS, W.cvars.maxFPS, knobSum()
+W.cvars.useMaxFPS, W.cvars.maxFPS = "1", "60"
+W.slash("findbest 60")
+W.fps = 59.94
+W.advance(30, 1 / 59.94)
+check(ns.Calibrate.State().scenes[1].done and knobSum() == calm, "a 60 fps cap at target 60 is done in one pass with nothing cut")
+W.slash("stop")
+W.cvars.useMaxFPS, W.cvars.maxFPS = capOn, cap
 W.advance(1)
 
 -- Find my best settings.

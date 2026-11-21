@@ -8,12 +8,11 @@
 --                             goalKey, paceKey, style, last = { cvar, from, to, t } } (one reused table)
 --                           goal = min(target, ceiling x 0.97); ceiling = the highest sustained fps (or maxFPS)
 --                           status "off"|"warming"|"holding"|"holding (settling)"|"lowering"|"raising (testing)"|
---                           "testing"|"at floor"|"best look at target"|"pre-adjusted"|"in combat"
+--                           "at floor"|"best look at target"|"pre-adjusted"|"in combat"
 --   Goal(locKey), SetGoal(name), SetLocationGoal(locKey, name | nil), GOALS { { key, name, desc }, ... }
 --   Pace(), SetPace(name), PACES { { key, name, desc }, ... }
 --   CombatLow(), ApplyCombatCuts(), DeferCombatCuts()  the low-FPS notice of a fight and the player's buttons
 --   Ladder()                { { cvar, from, to }, ... } the rungs down from the profile for this place and goal
---   Learned(locKey)         db.smart.learned[locKey] or nil (kept for callers; v3 learns per zone)
 --   ResetLearning(locKey)   nil = every zone and the machine-wide gains
 --   Adjust(locKey, values)  copy of values at this zone's rung position (Apply.Target calls it)
 --   SaveAsProfile(locKey, name) -> new profile id
@@ -22,7 +21,7 @@
 --   ForgetArea(key)
 --   Suggestion(), DismissSuggestion(key), SetSuggest(on)   the lag notice while smart mode is off
 --   AdjustPlace(key), AdjustState(), CancelAdjust()         one-place search down the ladder, saved as an override
--- Shared with Calibrate.lua: _Listen(fn(fps)), _PickLower(), _PickRaise(), _Feed(locKey, cvar, gain), _IsKnob(entry),
+-- Shared with Calibrate.lua: _Listen(fn(fps)), _PickLower(), _PickRaise(), _IsKnob(entry),
 -- _Current(cvar), _Fail(cvar).
 -- A zone is Location.Current().overrideKey (map:<id> / instance:<id>); a subzone becomes its own zone only when its
 -- fps differs more than 15% from the zone's.
@@ -59,7 +58,6 @@ for goalKey, goal in pairs(GOALS) do
 		COMBOS[goalKey][paceKey] = combo
 	end
 end
-local OLD_MODES = { balanced = { "balanced", "balanced" }, smooth = { "balanced", "smooth" }, performance = { "fps", "aggressive" }, fidelity = { "fidelity", "balanced" }, quality = { "fidelity", "balanced" }, efficient = { "balanced", "balanced" } }
 Smart.GOALS = {
 	{ key = "fps", name = "FPS", desc = "Holds your target first; trims effects early." },
 	{ key = "balanced", name = "Balanced", desc = "Best mix of looks and speed for your target." },
@@ -110,38 +108,38 @@ TRACKS.hitchy = { RenderScale = true, graphicsLiquidDetail = true }
 -- SCALE_MAX is native (100%): resample only matters under it, and the up track passes it last (supersampling costs the
 -- most for its looks). The player's maximum (db.smart.scaleMax, up to 200%) caps Smart's own raises above it.
 local SCALE, LIGHT, SCALE_STEP, SCALE_MAX = "RenderScale", "graphicsLightMode", 0.05, 1.0
+-- The client snaps render scale to its own grid (0.75 reads back 0.7533): values within half a step are the same.
+local HALF = SCALE_STEP / 2
 
 -- Measure: a ceiling candidate is the highest 5-minute p90 (of 60 valid seconds at least) that was flat at the top (p50
 -- within 2% of p90: the shape of a display, vsync or cap limit), forgotten after 24 h unseen; maxFPS when it is on. At or
 -- above the target it needs no proof. Below it must be confirmed (until then goal = target): within 3% of the target, or
--- whenever a probe raise is kept with no loss at it, machine-wide; further below, by cuts that gain nothing (2 pixel
--- rungs, then 2 CPU rungs unless the zone is CPU-bound, each under 2%), undone in one batch, for this zone only.
--- "At ceiling" = window median at 98% of the candidate. Buckets
+-- whenever a probe raise is kept with no loss at it, machine-wide. A zone's own limit: two cuts there that were expected
+-- to gain 4% or more and gained under 2% (each is undone); it counts under a frame cap too, for a day. A median 5% over
+-- a ceiling deletes it. "At ceiling" = window median at 98% of the candidate. Buckets
 -- within 3 s of a zone change, a loading screen or our own write don't count; a hitch second (worst frame over 4x the
 -- others) never does. Short = window median under goal x lowerAt with 70% of the window below.
 local MEASURE = { ceilMin = 60, ceilShare = 0.9, flat = 0.98, forget = 86400, goalShare = 0.97, atCeiling = 0.98, quiet = 3, hitch = 4, below = 0.7, binsPerFps = 2 }
-MEASURE.nearTarget, MEASURE.noGain, MEASURE.flatRungs, MEASURE.noLoss = 0.97, 2, 2, 0.995
+MEASURE.nearTarget, MEASURE.noGain, MEASURE.noLoss, MEASURE.judge, MEASURE.noGainCuts, MEASURE.over = 0.97, 2, 0.995, 4, 2, 1.05
 -- Decide: a probe raise is judged on the next 8 valid seconds; kept at 98% of before (at ceiling) or 103% of the goal.
 -- A reverted probe sets the zone's best; it opens again when the 60 s median moves 10% or after 24 h.
 local PROBE = { judge = 8, keepCeiling = 0.98, keepHeadroom = 1.03, drift = 0.10, driftN = 60, reopen = 86400, wait = 120, waitMax = 900 }
 -- A probe or a cut whose window median moved more than 10% the other way (the load changed) is dropped, not judged.
 -- Far short (over 10% under the goal): one batch of up to 4 rungs whose estimated gains cover the gap.
-PROBE.regime, PROBE.farShort, PROBE.batchMax = 0.10, 0.10, 4
+PROBE.regime, PROBE.farShort, PROBE.batchMax, PROBE.cutForget = 0.10, 0.10, 4, 6 * 3600
 -- Change budget per 10 min (pace.budget) outside zone entry; hitchy writes at least 20 s apart; a cut within 3 min of a
 -- kept raise locks raises in that zone for 15 min, doubling up to 2 h.
-local CALM = { budgetWindow = 600, hitchGap = 20, flapWindow = 180, lockFirst = 900, lockMax = 7200, farShort = 0.15 }
+local CALM = { budgetWindow = 600, hitchGap = 20, flapWindow = 180, lockFirst = 900, lockMax = 7200 }
 -- Learn: only probes and A/B/A tests feed gains. A sample is clamped to 0..2.5x the prior; the estimate shrinks to the
 -- prior (5 virtual samples); learned gains reorder adjacent rungs only with 8 samples and a 50% difference.
 local LEARN = { capTimes = 2.5, shrink = 5, reorderN = 8, reorderBy = 1.5, alpha = 0.3, cpuLow = 2, cpuHigh = 4, cpuTests = 2 }
 -- Learning is passive: Smart never changes a setting only to learn. A sustained-load cut feeds half a sample (the median
 -- of the 8 valid seconds after against the trigger window); a reverted probe feeds its cost when fps came back within 3%.
-LEARN.stepWeight, LEARN.backWithin = 0.5, 0.03
-local LEARN_VERSION = 3
+LEARN.stepWeight, LEARN.backWithin, LEARN.version, LEARN.prior = 0.5, 0.03, 3, 0.5
 local WARMUP, PRE_HOLD = 5, 5
-local DEFAULT_PRIOR = 0.5
 local LIMITS = { targetMin = 20, targetMax = 240, floorMin = 0.33, floorMax = 1.0, topMin = 1.0, topMax = 2.0 }
 -- Area fps EMAs move slowly (about 20 s) so one hitch or one good second doesn't redefine a place.
-local AREA_ALPHA, AREA_CAP, SUB_SPLIT, SUB_MIN, AREA_SEP = 0.05, 300, 0.15, 60, " · "
+local AREA = { alpha = 0.05, cap = 300, split = 0.15, subMin = 60, sep = " · " }
 local DEFAULTS = { target = 60, scaleFloor = 0.75, scaleMax = 1.0 }
 local NOTICE = { fightAfter = 5, fightCuts = 3, smoothLow = 0.8, smoothAfter = 30 }
 local SUGGEST = { after = 60, share = 0.7, below = 0.85, snooze = 7 * 86400 }
@@ -174,10 +172,8 @@ local asked, suggestion, held = {}, nil, nil
 local adjust, modeShown
 local fight = { low = 0, shown = false, defer = false }
 local probe = { active = false }
--- The sample of the last sustained-load cut, and a flat window under the target being tested as a limit (cuts that gain
--- nothing confirm it).
+-- The last sustained-load cut, judged on the 8 valid seconds after it.
 local learnStep = { active = false }
-local flatTest = { active = false }
 local adjRing = {}
 for i = 1, ADJ.hold do adjRing[i] = 0 end
 -- The ladder for the current base values and goal: built on demand, dropped when either changes.
@@ -203,7 +199,6 @@ local function cfg()
 	if type(db) ~= "table" then return nil end
 	if type(db.smart) ~= "table" then db.smart = { enabled = false } end
 	local smart = db.smart
-	if type(smart.learned) ~= "table" then smart.learned = {} end
 	if type(smart.areas) ~= "table" then smart.areas = {} end
 	if type(smart.gains) ~= "table" then smart.gains = {} end
 	if type(smart.snoozed) ~= "table" then smart.snoozed = {} end
@@ -238,6 +233,16 @@ local function gameText(fn)
 end
 
 local function inCombat() return not not (ns.InCombat and ns.InCombat()) end
+
+-- A taxi flight or a cinematic says nothing about the scene the player plays in.
+local function elsewhere()
+	if calm.cinematic then return true end
+	local okTaxi, taxi = false, nil
+	local okFilm, film = false, nil
+	if UnitOnTaxi then okTaxi, taxi = pcall(UnitOnTaxi, "player") end
+	if InCinematic then okFilm, film = pcall(InCinematic) end
+	return (okTaxi and plain(taxi) == true) or (okFilm and plain(film) == true) or false
+end
 
 local function slot(b) return (b - 1) % RING + 1 end
 
@@ -318,6 +323,9 @@ local function longPercentile(share)
 	return nil
 end
 
+-- A zone flag (freeFree, freeCost, cpu) is the time it was learned; it holds for a day.
+local function recent(t) return tonumber(t) and time() - t < MEASURE.forget or false end
+
 local function alive(c) return type(c) == "table" and tonumber(c.fps) and time() - (tonumber(c.t) or 0) < MEASURE.forget end
 
 -- The flat-topped candidate, confirmed or not (for "at ceiling"); maxFPS when it is on.
@@ -333,11 +341,11 @@ end
 -- target. nil -> goal = target.
 local function ceiling()
 	local cap = capCVar()
-	if cap then return cap end
 	local smart = cfg()
-	if not smart then return nil end
+	if not smart then return cap end
 	local a = area or (areaKey and smart.areas[areaKey])
-	if type(a) == "table" and alive(a.ceiling) then return a.ceiling.fps end
+	if type(a) == "table" and alive(a.ceiling) and (not cap or a.ceiling.fps < cap) then return a.ceiling.fps end
+	if cap then return cap end
 	local c = smart.ceiling
 	if alive(c) and (c.confirmed or c.fps >= setting("target")) then return c.fps end
 	return nil
@@ -349,7 +357,9 @@ local function ecoHolds()
 	return smart and type(smart.ecoCap) == "table"
 end
 
+-- Under a frame cap fps sits at the cap: that proves nothing about the display.
 local function confirmCeiling()
+	if capCVar() then return end
 	local smart = cfg()
 	local c = smart and smart.ceiling
 	if not alive(c) or c.confirmed then return end
@@ -382,6 +392,16 @@ local function goalAndCap()
 	return ceil >= target and target or ceil * MEASURE.goalShare, ceil, capCVar()
 end
 
+-- The k-th value into scratch, keeping scratch[1..k] sorted (no allocation).
+local function insert(k, v)
+	local j = k - 1
+	while j > 0 and scratch[j] > v do
+		scratch[j + 1] = scratch[j]
+		j = j - 1
+	end
+	scratch[j + 1] = v
+end
+
 -- Median of the last n valid seconds since validFrom (sorted into scratch) and how many there were.
 local function window(n)
 	local k = 0
@@ -389,12 +409,7 @@ local function window(n)
 		local i = slot(b)
 		if ringValid[i] == 1 then
 			k = k + 1
-			local v, j = ringFps[i], k - 1
-			while j > 0 and scratch[j] > v do
-				scratch[j + 1] = scratch[j]
-				j = j - 1
-			end
-			scratch[j + 1] = v
+			insert(k, ringFps[i])
 			if k == n then break end
 		end
 	end
@@ -419,12 +434,7 @@ local function longMedian(n)
 		local b = longBin[(bucketNo - 1 - d) % LONG + 1]
 		if b > 0 then
 			k = k + 1
-			local v, j = b / MEASURE.binsPerFps, k - 1
-			while j > 0 and scratch[j] > v do
-				scratch[j + 1] = scratch[j]
-				j = j - 1
-			end
-			scratch[j + 1] = v
+			insert(k, b / MEASURE.binsPerFps)
 			if k == n then break end
 		end
 	end
@@ -459,7 +469,7 @@ local function prior(cvar)
 		if ok and tonumber(impact) and impact > 0 then return impact end
 	end
 	local p = Catalog and Catalog.PRIOR and Catalog.PRIOR[cvar]
-	return tonumber(p) or DEFAULT_PRIOR
+	return tonumber(p) or LEARN.prior
 end
 
 -- The learned estimate, shrunk toward the prior, and how many samples it has.
@@ -511,7 +521,7 @@ end
 local function zoneCpu()
 	local smart = cfg()
 	local a = area or (smart and areaKey and smart.areas[areaKey])
-	return type(a) == "table" and a.cpu == true
+	return type(a) == "table" and recent(a.cpu)
 end
 
 local function buildLadder()
@@ -531,10 +541,10 @@ local function buildLadder()
 		if not (isKnob(entry) and v[cvar] ~= nil) then return end
 		if cvar == SCALE then
 			local stop = e.stop == "floor" and floor or math.max(e.stop, floor)
-			while v[cvar] > stop + 0.001 do add(rungs, cvar, round2(math.max(stop, v[cvar] - SCALE_STEP))) end
+			while v[cvar] > stop + HALF do add(rungs, cvar, round2(math.max(stop, v[cvar] - SCALE_STEP))) end
 			return
 		end
-		if e.scaled and not (v[SCALE] and v[SCALE] < SCALE_MAX - 0.001) then return end
+		if e.scaled and not (v[SCALE] and v[SCALE] < SCALE_MAX - HALF) then return end
 		local lowest = (cvar == LIGHT and m.lightMin) or (raid and e.raidMin) or e.stop or entry.min
 		for _ = 1, e.n or (e.stop and 99) or 1 do
 			local nextValue = Catalog.Step(cvar, v[cvar], -1)
@@ -543,8 +553,8 @@ local function buildLadder()
 		end
 	end
 	-- A profile above native: that part goes first under load.
-	if v[SCALE] and v[SCALE] > SCALE_MAX + 0.001 and isKnob(Catalog.Get(SCALE)) then
-		while v[SCALE] > SCALE_MAX + 0.001 do add(rungs, SCALE, round2(math.max(SCALE_MAX, v[SCALE] - SCALE_STEP))) end
+	if v[SCALE] and v[SCALE] > SCALE_MAX + HALF and isKnob(Catalog.Get(SCALE)) then
+		while v[SCALE] > SCALE_MAX + HALF do add(rungs, SCALE, round2(math.max(SCALE_MAX, v[SCALE] - SCALE_STEP))) end
 	end
 	local cpuFirst = m.cpuFirst or zoneCpu()
 	if cpuFirst then for _, e in ipairs(TRACKS.cpu) do run(e) end end
@@ -565,7 +575,7 @@ local function buildLadder()
 	for cvar, value in pairs(base) do v[cvar] = value end
 	local top = scaleTop()
 	local function scaleUp(to)
-		while v[SCALE] < to - 0.001 do add(ups, SCALE, round2(math.min(to, v[SCALE] + SCALE_STEP))) end
+		while v[SCALE] < to - HALF do add(ups, SCALE, round2(math.min(to, v[SCALE] + SCALE_STEP))) end
 	end
 	for _, cvar in ipairs(TRACKS.up) do
 		local entry = Catalog.Get(cvar)
@@ -604,18 +614,24 @@ local function dirtyLadder(newBase)
 	if newBase then baseVals = nil end
 end
 
-local function near(a, b) return a and b and math.abs(a - b) < 1e-6 end
+-- Half a step of the knob, as Catalog.Same.
+local function tol(cvar)
+	local entry = ns.Catalog and ns.Catalog.Get and ns.Catalog.Get(cvar)
+	return entry and entry.step and entry.step / 2 or 1e-6
+end
+
+local function same(cvar, a, b) return a and b and math.abs(a - b) < tol(cvar) end
 
 -- A rung is taken when its knob is at or under the rung's value (rungs of one knob go down in order); an up step when
 -- its knob is at or over it.
 local function rungTaken(r)
 	local v = current(r.cvar)
-	return v ~= nil and v <= r.to + 1e-6
+	return v ~= nil and v < r.to + tol(r.cvar)
 end
 
 local function upTaken(r)
 	local v = current(r.cvar)
-	return v ~= nil and v >= r.to - 1e-6
+	return v ~= nil and v > r.to - tol(r.cvar)
 end
 
 local function rungOk(r) return usable(r.cvar) end
@@ -641,7 +657,7 @@ local function freeAny()
 	local _, _, bonus = theLadder()
 	for _, r in ipairs(bonus) do
 		local v = current(r.cvar)
-		if v and v > r.from + 1e-6 then return true end
+		if v and v > r.from + tol(r.cvar) then return true end
 	end
 	return false
 end
@@ -699,7 +715,7 @@ local function evict(areas)
 		local t = type(a) == "table" and tonumber(a.t) or 0
 		if not oldT or t < oldT then oldKey, oldT = key, t end
 	end
-	if count < AREA_CAP then return end
+	if count < AREA.cap then return end
 	areas[oldKey] = nil
 	return evict(areas)
 end
@@ -715,27 +731,18 @@ local function computeArea()
 	local z = smart and smart.areas[base]
 	local subs = type(z) == "table" and type(z.subs) == "table" and z.subs
 	local s = sub ~= "" and subs and subs[sub]
-	if type(s) == "table" and s.split then return base .. "/" .. sub, sub == zone and zone or (zone .. AREA_SEP .. sub) end
+	if type(s) == "table" and s.split then return base .. "/" .. sub, sub == zone and zone or (zone .. AREA.sep .. sub) end
 	return base, zone
 end
 
--- The location type's median position over its known zones (for a zone seen for the first time). Costly raises are
--- earned at each zone's own ceiling, so a new zone's cost track never starts above the profile; the free track follows
--- most known zones (it costs nothing).
--- -> position, free track up (most of the known zones).
-local function typicalPos(key)
-	local smart = cfg()
-	if not smart then return 0, false end
-	local list, up = {}, 0
-	for _, a in pairs(smart.areas) do
-		if type(a) == "table" and a.locKey == key and tonumber(a.pos) then
-			list[#list + 1] = a.pos
-			if a.free then up = up + 1 end
-		end
-	end
-	if #list == 0 then return 0, false end
-	table.sort(list)
-	return math.max(0, list[math.floor((#list + 1) / 2)]), up * 2 > #list
+-- A zone's remembered position: a cut position older than 6 hours is stale (the load it answered is gone); a zone
+-- never visited starts at the profile, with the free track as it is (it costs nothing, and moving it stutters).
+-- -> position, free track up.
+local function zonePos(a)
+	local pos = type(a) == "table" and tonumber(a.pos)
+	if not pos then return nil end
+	if pos > 0 and time() - (tonumber(a.posAt) or tonumber(a.t) or 0) > PROBE.cutForget then pos = 0 end
+	return pos, a.free
 end
 
 function areaEntry()
@@ -754,10 +761,10 @@ end
 local function updateArea(fps, goal)
 	local a = areaEntry()
 	if not a then return end
-	a.fps, a.minFps = ema(a.fps, fps, AREA_ALPHA), math.min(a.minFps or fps, fps)
+	a.fps, a.minFps = ema(a.fps, fps, AREA.alpha), math.min(a.minFps or fps, fps)
 	a.seconds = (a.seconds or 0) + 1
 	if fps < goal * LOWER_AT then a.below = (a.below or 0) + 1 end
-	if inCombat() then a.combatFps = ema(a.combatFps, fps, AREA_ALPHA) else a.calmFps = ema(a.calmFps, fps, AREA_ALPHA) end
+	if inCombat() then a.combatFps = ema(a.combatFps, fps, AREA.alpha) else a.calmFps = ema(a.calmFps, fps, AREA.alpha) end
 	a.t = time()
 	if areaKey ~= (locOverride or locKey) or inCombat() then return end
 	-- Each part of the zone ("" = no subzone) keeps its own fps; one 15% off the rest of the zone becomes a zone.
@@ -768,31 +775,35 @@ local function updateArea(fps, goal)
 		s = { n = 0 }
 		a.subs[sub] = s
 	end
-	s.fps, s.n = ema(s.fps, fps, AREA_ALPHA), s.n + 1
-	if sub == "" or s.split or s.n < SUB_MIN then return end
+	s.fps, s.n = ema(s.fps, fps, AREA.alpha), s.n + 1
+	if sub == "" or s.split or s.n < AREA.subMin then return end
 	local sum, n = 0, 0
 	for other, o in pairs(a.subs) do
-		if other ~= sub and type(o) == "table" and o.fps and (o.n or 0) >= SUB_MIN / 6 then sum, n = sum + o.fps * o.n, n + o.n end
+		if other ~= sub and type(o) == "table" and o.fps and (o.n or 0) >= AREA.subMin / 6 then sum, n = sum + o.fps * o.n, n + o.n end
 	end
-	if n > 0 and math.abs(s.fps - sum / n) > (sum / n) * SUB_SPLIT then s.split = true end
+	if n > 0 and math.abs(s.fps - sum / n) > (sum / n) * AREA.split then s.split = true end
 end
 
 local function rememberPos(a)
 	a = a or areaEntry()
-	if a then a.pos, a.free = posNow(), freeOn() end
+	if a then a.pos, a.free, a.posAt = posNow(), freeOn(), time() end
 end
 
 -- Writes ----------------------------------------------------------------------------------------------------------
 
--- One knob write through Apply. Held in combat by Apply ("combat"), which is not a failure.
-local function write(cvar, from, to)
+-- One write through Apply. Held in combat by Apply ("combat"), which is not a failure.
+local function put(cvar, to, reason)
 	local Apply = ns.Apply
 	if not (Apply and Apply.Write) then return false end
-	local ok, written, why = pcall(Apply.Write, cvar, to, "smart mode (" .. activeMode().name .. ")")
-	if not (ok and written) then
-		if not (ok and why == "combat") then failed[cvar] = true end
-		return false
-	end
+	local ok, written, why = pcall(Apply.Write, cvar, to, reason)
+	if ok and written then return true end
+	if not (ok and why == "combat") then failed[cvar] = true end
+	return false
+end
+
+-- One knob write as a decision of smart mode.
+local function write(cvar, from, to)
+	if not put(cvar, to, "smart mode (" .. activeMode().name .. ")") then return false end
 	markQuiet()
 	local last = state.last
 	last.cvar, last.from, last.to, last.t = cvar, from, to, time()
@@ -838,7 +849,7 @@ local function writeBatch(list, t)
 		if to ~= nil then
 			final[c.cvar] = nil
 			local from = current(c.cvar)
-			if not near(from, to) and write(c.cvar, from, to) then n = n + 1 end
+			if not same(c.cvar, from, to) and write(c.cvar, from, to) then n = n + 1 end
 		end
 	end
 	if n == 0 then return 0 end
@@ -855,7 +866,7 @@ local function applyPos(pos, free)
 	local n = 0
 	for cvar, value in pairs(want) do
 		local v = current(cvar)
-		if usable(cvar) and v ~= nil and not near(v, value) and write(cvar, v, value) then n = n + 1 end
+		if usable(cvar) and v ~= nil and not same(cvar, v, value) and write(cvar, v, value) then n = n + 1 end
 	end
 	if n == 0 then return 0 end
 	local t = now()
@@ -890,7 +901,7 @@ local function enterArea()
 	local key, name = computeArea()
 	if not key or key == areaKey then return false end
 	areaKey, areaName, area = key, name, nil
-	probe.active, learnStep.active, flatTest.active = false, false, false
+	probe.active, learnStep.active = false, false
 	calm.driftN = 0
 	validFrom = bucketNo
 	markQuiet()
@@ -899,16 +910,13 @@ local function enterArea()
 	if held and held.key ~= key then asked[held.key], held = nil, nil end
 	areaInfo.key, areaInfo.name = key, name
 	dirtyLadder()
-	if not canAct() or inCombat() then return false end
+	if not canAct() or inCombat() or elsewhere() then return false end
 	local smart = cfg()
-	local a = smart.areas[key]
-	local pos, free = a and tonumber(a.pos), a and a.free
-	if not pos then
-		local parent = key:match("^(.-)/") and smart.areas[key:match("^(.-)/")]
-		if type(parent) == "table" and tonumber(parent.pos) then pos, free = parent.pos, parent.free else pos, free = typicalPos(currentLocKey()) end
-	end
+	local pos, free = zonePos(smart.areas[key])
+	if not pos then pos, free = zonePos(key:match("^(.-)/") and smart.areas[key:match("^(.-)/")]) end
+	if not pos then pos, free = 0, freeOn() end
 	local n = applyPos(pos, free)
-	a = areaEntry()
+	local a = areaEntry()
 	if a and a.pos == nil then a.pos, a.free = pos, free end
 	if n == 0 then pauseUntil = math.max(pauseUntil, now() + WARMUP) end
 	return n > 0
@@ -947,78 +955,66 @@ end
 
 -- Decide ----------------------------------------------------------------------------------------------------------
 
--- While a flat window is tested as a limit: pixel rungs first, then (unless the zone is CPU-bound) CPU rungs.
-local function flatPick()
-	local wantCpu = flatTest.pixel >= MEASURE.flatRungs
-	if wantCpu and (zoneCpu() or flatTest.cpu >= MEASURE.flatRungs) then return nil end
-	for _, r in ipairs((theLadder())) do
-		if not rungTaken(r) and rungOk(r) and (TRACKS.cpuSet[r.cvar] or false) == wantCpu then return r.cvar, current(r.cvar), r.to end
-	end
-	return nil
-end
-
--- Nothing helped: it is this zone's limit. The test cuts go back in one batch.
-local function confirmFlat()
-	flatTest.active = false
-	for i = #flatTest.cuts, 1, -1 do
-		local c = flatTest.cuts[i]
-		write(c.cvar, current(c.cvar), c.from)
-	end
-	validFrom = bucketNo
-	local a = areaEntry()
-	if a then a.ceiling = { fps = flatTest.fps, t = time() } end
-	rememberPos()
-	if ns.debug then ns.debug("smart zone ceiling %.1f confirmed", flatTest.fps) end
-	setStatus("holding")
-end
-
--- The sample of a sustained-load cut: half weight, the CPU flag (render scale), and the flat-window test.
+-- A sustained-load cut expected to gain 4% or more that gained under 2% is undone; the second such in a zone makes its
+-- fps the zone's limit for a day. One rung is also half a sample, and render scale rungs set the CPU flag.
 local function finishStep(after)
 	learnStep.active = false
-	local before = learnStep.before
+	local before, list, expect = learnStep.before, learnStep.list, learnStep.expect
 	if not (before and before > 0) then return end
 	local gain = (after - before) / before * 100
-	-- The load changed while it was pending (fps fell, or rose far past what one rung can give): not judged.
-	if after < before * (1 - PROBE.regime) or gain > math.max(PROBE.regime * 100, prior(learnStep.cvar) * LEARN.capTimes) then
-		if flatTest.active then flatTest.active = false end
-		return
-	end
-	feed(learnStep.cvar, gain, LEARN.stepWeight)
-	local a = areaEntry()
-	if a and learnStep.cvar == SCALE then
+	-- The load changed while it was pending (fps fell, or rose far past what the cut can give): not judged.
+	if after < before * (1 - PROBE.regime) or gain > math.max(PROBE.regime * 100, expect * LEARN.capTimes) then return end
+	local a, only = areaEntry(), #list == 1 and list[1].cvar
+	if a and only == SCALE then
 		if gain > LEARN.cpuHigh then
-			a.cpu, a.cpuLow = false, 0
+			a.cpu, a.cpuLow = nil, 0
 		elseif gain < LEARN.cpuLow then
 			a.cpuLow = (a.cpuLow or 0) + 1
-			if a.cpuLow >= LEARN.cpuTests then a.cpu = true end
+			if a.cpuLow >= LEARN.cpuTests then a.cpu = time() end
 		end
 		dirtyLadder()
 	end
-	if not flatTest.active then return end
-	if gain >= MEASURE.noGain then
-		-- A cut helped: that level was load, not a limit.
-		flatTest.active = false
-		if a then a.flatNo = time() end
-		local smart = cfg()
-		if smart and type(smart.ceiling) == "table" and not smart.ceiling.confirmed then smart.ceiling = nil end
+	if a and expect >= MEASURE.judge and gain < MEASURE.noGain then
+		local back = {}
+		for i = #list, 1, -1 do back[#back + 1] = { cvar = list[i].cvar, from = list[i].to, to = list[i].from } end
+		writeBatch(back, now())
+		a.noGain = (a.noGain or 0) + 1
+		if a.noGain >= MEASURE.noGainCuts then a.ceiling, a.noGain = { fps = before, t = time() }, nil end
+		if ns.debug then ns.debug("smart cut gained %.1f%%, undone", gain) end
 		return
 	end
-	if TRACKS.cpuSet[learnStep.cvar] then flatTest.cpu = flatTest.cpu + 1 else flatTest.pixel = flatTest.pixel + 1 end
-	if not flatPick() then confirmFlat() end
+	if a and gain >= MEASURE.noGain then a.noGain = nil end
+	if only then feed(only, gain, LEARN.stepWeight) end
 end
 
 -- The next n cost-track rungs down, worked out on simulated values; with need (a % to cover) it stops once the summed
--- estimates reach it. A stutter rung that may not go yet ends the list.
-local function nextCuts(n, need, t)
+-- estimates reach it. A stutter rung that may not go yet ends the list; with atProfile, so does a cut below the profile.
+local function nextCuts(n, need, t, atProfile)
 	local list, sum = {}, 0
 	for _ = 1, n do
 		local cvar, from, to = pickLower()
 		if not cvar then break end
 		if TRACKS.hitchy[cvar] and t - calm.lastHitchy < CALM.hitchGap then break end
+		if atProfile and to < (baseValues()[cvar] or to) - tol(cvar) then break end
 		list[#list + 1] = { cvar = cvar, from = from, to = to }
 		shadow[cvar] = to
 		sum = sum + estimate(cvar)
 		if not need or sum >= need then break end
+	end
+	for k in pairs(shadow) do shadow[k] = nil end
+	return list
+end
+
+-- With headroom (not at a ceiling): up to 4 rungs back whose estimated costs fit under it (at least one).
+local function nextRaises(room)
+	local list, sum = {}, 0
+	for _ = 1, PROBE.batchMax do
+		local cvar, from, to = pickRaise(false)
+		if not cvar then break end
+		local cost = estimate(cvar)
+		if #list > 0 and sum + cost > room then break end
+		list[#list + 1] = { cvar = cvar, from = from, to = to }
+		shadow[cvar], sum = to, sum + cost
 	end
 	for k in pairs(shadow) do shadow[k] = nil end
 	return list
@@ -1031,7 +1027,7 @@ local function freeBatch(up)
 	for _, r in ipairs(bonus) do
 		local v = current(r.cvar)
 		local to = up and r.to or r.from
-		if v and rungOk(r) and not near(v, to) then list[#list + 1] = { cvar = r.cvar, from = v, to = to } end
+		if v and rungOk(r) and not same(r.cvar, v, to) then list[#list + 1] = { cvar = r.cvar, from = v, to = to } end
 	end
 	return list
 end
@@ -1041,12 +1037,13 @@ end
 local function startProbe(kind, list, med, atCeil, t)
 	if writeBatch(list, t) == 0 then return false end
 	probe.active, probe.kind, probe.list, probe.before, probe.atCeil, probe.back = true, kind, list, med, atCeil, false
+	probe.ceil = atCeil and candidate() or med
 	learnStep.active = false
 	setStatus(kind == "drop" and "lowering" or "raising (testing)")
 	return true
 end
 
--- Cut while short: one rung, or (over 10% short, outside a flat-window test) one batch of up to 4 covering the gap.
+-- Cut while short: one rung, or (over 10% short) one batch of up to 4 covering the gap.
 -- The budget never holds a cut back. At the cost floor the free track drops in one batch (first, in a CPU-bound zone).
 local function lower(m, med, goal, t)
 	local a = areaEntry()
@@ -1058,43 +1055,36 @@ local function lower(m, med, goal, t)
 			a.lockUntil, a.lastRaise = time() + a.lockLen, nil
 		end
 	end
-	local canDrop = freeAny() and not (a and a.freeFree)
+	local canDrop = freeAny() and not (a and recent(a.freeFree))
+	-- Smart's own free batch goes before anything below the profile (first, in a CPU-bound zone).
 	if canDrop and zoneCpu() and startProbe("drop", freeBatch(false), med, false, t) then return end
-	local list
-	if flatTest.active then
-		local cvar, from, to = flatPick()
-		list = cvar and { { cvar = cvar, from = from, to = to } } or {}
-	else
-		local far = med < goal * (1 - PROBE.farShort)
-		list = nextCuts(far and PROBE.batchMax or 1, far and (goal / med - 1) * 100 or nil, t)
-	end
+	local far = med < goal * (1 - PROBE.farShort)
+	local list = nextCuts(far and PROBE.batchMax or 1, far and (goal / med - 1) * 100 or nil, t, canDrop)
 	if #list == 0 then
-		if pickLower() then return setStatus("lowering") end
-		if flatTest.active then
-			if #flatTest.cuts > 0 then return confirmFlat() end
-			flatTest.active = false
-		end
 		if canDrop and startProbe("drop", freeBatch(false), med, false, t) then return end
+		if pickLower() then return setStatus("lowering") end
 		return setStatus("at floor")
 	end
 	if writeBatch(list, t) == 0 then return setStatus("at floor") end
-	if flatTest.active then flatTest.cuts[#flatTest.cuts + 1] = list[1] end
-	-- One rung after about 10 s under the goal is half a sample; a batch can't be told apart.
-	if #list == 1 then learnStep.active, learnStep.cvar, learnStep.before = true, list[1].cvar, med else learnStep.active = false end
+	-- Only cuts below the profile are judged; taking back Smart's own raises above it always stays.
+	local base, expect = baseValues(), 0
+	for _, c in ipairs(list) do if c.to < (base[c.cvar] or c.to) - tol(c.cvar) then expect = expect + estimate(c.cvar) end end
+	learnStep.active, learnStep.list, learnStep.before, learnStep.expect = true, list, med, expect
 	calm.recovering = true
 	setStatus("lowering")
 end
 
 -- Raise: the free track first (one batch, at the ceiling), then the cost track one rung (undo a cut; at the ceiling, a
 -- costly raise above the profile).
-local function raise(m, med, atCeil, t)
+local function raise(m, med, goal, atCeil, t)
 	local a = areaEntry()
 	local list
-	if atCeil and not freeOn() and not (a and a.freeCost) then list = freeBatch(true) end
+	if atCeil and not freeOn() and not (a and recent(a.freeCost)) then list = freeBatch(true) end
 	local kind = list and #list > 0 and "free" or "cost"
 	if kind == "cost" then
+		list = med >= goal * m.raiseAt and nextRaises((med / (goal * PROBE.keepHeadroom) - 1) * 100) or {}
 		local cvar, from, to = pickRaise(atCeil)
-		list = cvar and { { cvar = cvar, from = from, to = to } } or {}
+		if #list == 0 and cvar then list = { { cvar = cvar, from = from, to = to } } end
 	end
 	if #list == 0 then
 		local cand = candidate()
@@ -1115,25 +1105,36 @@ local function revertProbe()
 	writeBatch(back, now())
 end
 
+-- The zone's best: where it is now, settled at the fps before the probe.
+local function settle(a)
+	a.best, a.bestAt, a.settledFps = posNow(), time(), probe.before
+	a.pos, a.posAt = a.best, time()
+end
+
 local function checkProbe(m, goal)
 	local med, k = window(PROBE.judge)
-	if k < PROBE.judge then return setStatus(probe.back and "best look at target" or (probe.kind == "drop" and "lowering" or "raising (testing)")) end
+	if k < PROBE.judge then return setStatus(probe.back and (probe.unsure and "holding" or "best look at target") or (probe.kind == "drop" and "lowering" or "raising (testing)")) end
 	local a = areaEntry()
 	-- After a revert: the cost counts only when fps came back to where it was (a clean A/B/A).
 	if probe.back then
 		probe.active = false
+		local came = probe.before > 0 and math.abs(med - probe.before) <= probe.before * LEARN.backWithin
+		if probe.unsure then
+			if came and a then settle(a) end
+			return setStatus(came and "best look at target" or "holding")
+		end
 		local only = probe.kind == "cost" and #probe.list == 1 and probe.list[1]
-		if only and probe.before > 0 and math.abs(med - probe.before) <= probe.before * LEARN.backWithin then feed(only.cvar, probe.cost) end
+		if only and came then feed(only.cvar, probe.cost) end
 		return setStatus("best look at target")
 	end
 	probe.active = false
 	-- The free track dropped at the cost floor: if that gained nothing it goes back up and stays up here.
 	if probe.kind == "drop" then
 		if a and med < probe.before * (1 + MEASURE.noGain / 100) then
-			a.freeFree = true
+			a.freeFree = time()
 			revertProbe()
 		elseif a then
-			a.freeCost = true
+			a.freeCost = time()
 		end
 		rememberPos()
 		return setStatus("holding")
@@ -1143,12 +1144,12 @@ local function checkProbe(m, goal)
 		rememberPos()
 		return setStatus("holding")
 	end
-	local keep = probe.atCeil and med >= probe.before * PROBE.keepCeiling or (not probe.atCeil and med >= goal * PROBE.keepHeadroom)
+	local keep = med >= goal * PROBE.keepHeadroom or (probe.atCeil and med >= probe.ceil * PROBE.keepCeiling)
 	if keep then
 		-- A costly raise kept at the candidate with no loss: the fps was capped, not the scene's limit (free knobs prove
 		-- nothing, they cost nothing).
 		if probe.atCeil and probe.kind == "cost" and med >= probe.before * MEASURE.noLoss then confirmCeiling() end
-		if a then a.lastRaise = time() end
+		if a then a.lastRaise, a.lockLen, a.backoff = time(), nil, nil end
 		rememberPos()
 		return setStatus("holding")
 	end
@@ -1156,17 +1157,13 @@ local function checkProbe(m, goal)
 		a.backoff = a.backoff and math.min(a.backoff * 2, PROBE.waitMax) or PROBE.wait
 		a.waitUntil = time() + a.backoff
 	end
-	if med < probe.before * (1 - PROBE.regime) and probe.kind == "cost" then
-		-- A drop this big may be load arriving, not the probe: it is undone (safe) but neither judged nor remembered.
-		revertProbe()
-		return setStatus("holding")
-	end
-	probe.active, probe.back, probe.cost = true, true, probe.before > 0 and (probe.before - med) / probe.before * 100 or 0
+	-- A drop over 10% may be load arriving, not the probe: undone (safe), and remembered only if fps then comes back.
+	local unsure = med < probe.before * (1 - PROBE.regime) and probe.kind == "cost"
+	probe.active, probe.back, probe.unsure, probe.cost = true, true, unsure, probe.before > 0 and (probe.before - med) / probe.before * 100 or 0
 	revertProbe()
-	if a then
-		if probe.kind == "free" then a.freeCost = true end
-		a.best, a.bestAt, a.settledFps = posNow(), time(), probe.before
-		a.pos = a.best
+	if a and not unsure then
+		if probe.kind == "free" then a.freeCost = time() end
+		settle(a)
 	end
 	calm.driftN = 0
 	if ns.debug then ns.debug("smart probe %s reverted (%.1f fps)", probe.kind, med) end
@@ -1208,17 +1205,16 @@ function decide()
 	if m.regionOnly and t > calm.regionUntil then return holdRegion(goal) end
 	local med, k = window(m.lowerN)
 	if k < m.lowerN then return setStatus(now() < preUntil and "pre-adjusted" or "holding") end
+	-- Fps clearly over a ceiling disproves it (a steady scene, not the display).
+	local smart, za = cfg(), areaEntry()
+	if za and alive(za.ceiling) and med > za.ceiling.fps * MEASURE.over then za.ceiling = nil end
+	if not capCVar() and alive(smart.ceiling) and med > smart.ceiling.fps * MEASURE.over then smart.ceiling = nil end
+	goal = goalAndCap()
 	local line = goal * m.lowerAt
 	local short = med < line and countBelow(k, line) >= k * MEASURE.below
 	if short then
-		local far = med < goal * (1 - CALM.farShort)
+		local far = med < goal * (1 - PROBE.farShort)
 		if t - calm.lastChange < (far and m.fastLower or m.lowerDwell) then return end
-		-- No trusted ceiling: the first cuts here also test whether this level is a limit (once a day per zone).
-		local cand, a = candidate(), areaEntry()
-		local tested = a and a.flatNo and time() - a.flatNo < MEASURE.forget
-		if not flatTest.active and not learnStep.active and not ceiling() and not tested and (not cand or (cand < setting("target") * MEASURE.nearTarget and med >= cand * MEASURE.atCeiling)) then
-			flatTest.active, flatTest.pixel, flatTest.cpu, flatTest.cuts, flatTest.fps = true, 0, 0, {}, cand or med
-		end
 		return lower(m, med, goal, t)
 	end
 	if calm.recovering then calm.recovering, calm.settleUntil = false, t + m.settle end
@@ -1228,8 +1224,10 @@ function decide()
 	if bestHolds(a) then return setStatus(atCeil and "best look at target" or "holding") end
 	local locked = a and a.lockUntil and time() < a.lockUntil
 	local waiting = a and a.waitUntil and time() < a.waitUntil
-	local room = atCeil or med >= goal * m.raiseAt
-	if room and not locked and not waiting and t >= calm.settleUntil and t - calm.lastChange >= m.raiseDwell then return raise(m, med, atCeil, t) end
+	-- Fights here already run under the lowering line: a raise between pulls would make them slower.
+	local fightsSlow = a and a.combatFps and a.combatFps < setting("target") * m.lowerAt
+	local room = (atCeil or med >= goal * m.raiseAt) and not fightsSlow
+	if room and not locked and not waiting and t >= calm.settleUntil and t - calm.lastChange >= m.raiseDwell then return raise(m, med, goal, atCeil, t) end
 	setStatus(now() < preUntil and "pre-adjusted" or "holding")
 end
 
@@ -1270,12 +1268,7 @@ end
 
 local function fireAdjust() if ns.Fire then ns.Fire("FSG_ADJUST", Smart.AdjustState()) end end
 
-local function adjWrite(cvar, to)
-	local ok, written, why = pcall(ns.Apply.Write, cvar, to)
-	if ok and written then return true end
-	if not (ok and why == "combat") then failed[cvar] = true end
-	return false
-end
+local function adjWrite(cvar, to) return put(cvar, to) end
 
 local function adjMean(k)
 	local sum = 0
@@ -1372,15 +1365,19 @@ local function onUpdate(_, elapsed)
 	if spent < 1 then return end
 	bucketNo = bucketNo + 1
 	local i = slot(bucketNo)
-	local fps = frames / spent
-	-- A hitch second: its worst frame over 4x the other frames' average.
+	-- A hitch second (worst frame over 4x the others' average) counts without that frame.
 	local others = frames > 1 and (spent - worstFrame) / (frames - 1)
 	local hitch = others and others > 0 and worstFrame > others * MEASURE.hitch
-	local valid = not loading and not hitch and now() >= quietUntil and not inCombat()
+	local fps = hitch and 1 / others or frames / spent
+	-- Minimised (one or two frames) or alt-tabbed at the background cap (flat at maxFPSBk): not a sample.
+	local bk = getCVar("useMaxFPSBk") == "1" and tonumber(getCVar("maxFPSBk"))
+	local away = frames <= 2 or elsewhere() or (bk and math.abs(fps - bk) <= bk * 0.03 and worstFrame <= spent / frames * 1.25) or false
+	local valid = not loading and not away and now() >= quietUntil and not inCombat()
 	ringFps[i], ringValid[i] = fps, valid and 1 or 0
 	pushLong(valid and fps or nil)
 	if bucketNo % 10 == 0 then updateCeiling() end
 	frames, spent, worstFrame = 0, 0, 0
+	if away then return end
 	if bucketHook then bucketHook(fps) end
 	if adjust and adjust.running then return adjustTick(fps) end
 	if Smart.Enabled() then return decide() end
@@ -1403,60 +1400,40 @@ function refresh(reason)
 	if Apply and Apply.Refresh then pcall(Apply.Refresh, reason) end
 end
 
--- Saved data from the old Efficient style may still hold its frame cap: the player's own comes back once.
-local function restoreOldCap()
-	local smart, Apply = cfg(), ns.Apply
-	local saved = smart and smart.capSaved
-	if type(saved) ~= "table" or not (Apply and Apply.Write) then return end
-	smart.capSaved = nil
-	pcall(Apply.Write, "maxFPS", tonumber(saved.maxFPS) or 0, "smart mode")
-	pcall(Apply.Write, "useMaxFPS", tonumber(saved.useMaxFPS) or 0, "smart mode")
-end
-
--- The old single style becomes a goal and a pace, once (a fallback; Core's repair does the same).
-local function migrateOldModes()
-	local smart = cfg()
-	if not smart then return end
-	local old = OLD_MODES[smart.mode]
-	if old and smart.goal == nil then smart.goal, smart.pace = old[1], smart.pace or old[2] end
-	if type(smart.modes) == "table" then
-		if type(smart.goals) ~= "table" then smart.goals = {} end
-		for key, name in pairs(smart.modes) do
-			if OLD_MODES[name] and smart.goals[key] == nil then smart.goals[key] = OLD_MODES[name][1] end
-		end
-	end
-	smart.mode, smart.modes = nil, nil
-end
-
 -- Learning from the v2 loop credited transient recoveries to cuts; it goes once. Zone lag history stays.
 local function dropStaleLearning()
 	local smart = cfg()
-	if not smart or smart.learnVersion == LEARN_VERSION then return end
-	smart.learned, smart.gains, smart.retest, smart.learnVersion = {}, {}, nil, LEARN_VERSION
+	if not smart or smart.learnVersion == LEARN.version then return end
+	smart.learned, smart.gains, smart.retest, smart.learnVersion = {}, {}, nil, LEARN.version
 	for _, a in pairs(smart.areas) do
 		if type(a) == "table" then a.settled, a.combatSettled, a.cpu, a.values, a.settledFps = nil, nil, nil, nil, nil end
 	end
 end
 
 -- Eco's frame cap: the player's own cap is saved once when Eco takes over and written back once when it stops applying
--- (another goal or location goal, smart mode off, restore, or a login where it no longer applies). The fps seen under
--- our cap is then forgotten so it is never taken for the display's limit.
+-- (another goal or location goal, smart mode off, restore, or a login where it no longer applies); the saved cap goes
+-- only once both read back (in combat Apply holds them; combat end tries again). Eco caps at the target, or the
+-- player's own cap when that is lower. The fps seen under our cap is then forgotten so it is never taken for the
+-- display's limit.
 local function syncEco()
 	local smart, Apply = cfg(), ns.Apply
 	if not (smart and Apply and Apply.Write) then return end
 	local reason = "smart mode (" .. GOALS.eco.name .. ")"
 	if Smart.Enabled() and goalKey(currentLocKey()) == "eco" then
 		if not ecoHolds() then smart.ecoCap = { useMaxFPS = tonumber(getCVar("useMaxFPS")) or 0, maxFPS = tonumber(getCVar("maxFPS")) or 0 } end
-		local target = setting("target")
+		local saved, target = smart.ecoCap, setting("target")
+		local own = tonumber(saved.useMaxFPS) == 1 and tonumber(saved.maxFPS) or 0
+		calm.ecoAt = own > 0 and math.min(own, target) or target
 		if getCVar("useMaxFPS") ~= "1" then pcall(Apply.Write, "useMaxFPS", 1, reason) end
-		if tonumber(getCVar("maxFPS")) ~= target then pcall(Apply.Write, "maxFPS", target, reason) end
+		if tonumber(getCVar("maxFPS")) ~= calm.ecoAt then pcall(Apply.Write, "maxFPS", calm.ecoAt, reason) end
 		return
 	end
 	if not ecoHolds() then return end
 	local saved = smart.ecoCap
+	local okCap, cap = pcall(Apply.Write, "maxFPS", tonumber(saved.maxFPS) or 0, reason)
+	local okOn, on = pcall(Apply.Write, "useMaxFPS", tonumber(saved.useMaxFPS) or 0, reason)
+	if not (okCap and cap and okOn and on) then return end
 	smart.ecoCap = nil
-	pcall(Apply.Write, "maxFPS", tonumber(saved.maxFPS) or 0, reason)
-	pcall(Apply.Write, "useMaxFPS", tonumber(saved.useMaxFPS) or 0, reason)
 	for i = 1, LONG do longBin[i] = 0 end
 	for i = 1, HIST_BINS do hist[i] = 0 end
 	longN = 0
@@ -1475,6 +1452,19 @@ local function syncMode()
 	notify(true)
 end
 
+-- A changed target, goal, pace or render scale range reopens every zone's raises, and a minimum above the live render
+-- scale lifts it now (never above the profile's own value).
+local function settingsChanged()
+	local smart = cfg()
+	for _, a in pairs(smart and smart.areas or {}) do
+		if type(a) == "table" then a.best, a.settledFps, a.waitUntil = nil, nil, nil end
+	end
+	if not (Smart.Enabled() and ns.Catalog and ns.Catalog.LIST) then return end
+	local live, floor = current(SCALE), scaleFloor()
+	local want = math.min(floor, baseValues()[SCALE] or floor)
+	if live and live < want - HALF and usable(SCALE) and write(SCALE, live, want) then rememberPos() end
+end
+
 -- Public API ------------------------------------------------------------------------------------------------------
 
 function Smart.Enabled()
@@ -1482,9 +1472,28 @@ function Smart.Enabled()
 	return not not (smart and smart.enabled)
 end
 
+-- Off leaves no trace: every knob back at the place's profile (Apply.Target with smart mode off), written here (Apply
+-- holds them in combat).
+local function restoreKnobs()
+	local Apply = ns.Apply
+	if not (Apply and Apply.Target and ns.Catalog and ns.Catalog.LIST) then return end
+	local ok, target = pcall(Apply.Target)
+	if not (ok and type(target) == "table") then return end
+	for _, entry in ipairs(ns.Catalog.LIST) do
+		local cvar = entry.cvar
+		local want, v = tonumber(target[cvar]), current(cvar)
+		if isKnob(entry) and want and v and usable(cvar) and not same(cvar, v, want) then put(cvar, want, "smart mode off") end
+	end
+end
+
+-- On turns switching on first and is refused (false) while Find my best settings runs.
 function Smart.SetEnabled(on)
 	local smart = cfg()
-	if not smart then return end
+	if not smart then return false end
+	local Apply, Calibrate, options = ns.Apply, ns.Calibrate, ns.db.options
+	if on and Calibrate and Calibrate.State and Calibrate.State().running then return false end
+	if on and Apply and Apply.SetSwitching and type(options) == "table" and options.switching == false then Apply.SetSwitching(true) end
+	local was = smart.enabled
 	smart.enabled = not not on
 	if on and adjust and adjust.running then stopAdjust() end
 	startSampler()
@@ -1492,8 +1501,10 @@ function Smart.SetEnabled(on)
 	state.status = smart.enabled and "warming" or "off"
 	if smart.enabled then openRegion() end
 	syncEco()
+	if was and not smart.enabled then restoreKnobs() end
 	refresh("smart")
 	notify(true)
+	return true
 end
 
 function Smart.SetTarget(fps)
@@ -1502,6 +1513,7 @@ function Smart.SetTarget(fps)
 	if not (smart and fps) then return nil end
 	smart.target = math.floor(clamp(fps, LIMITS.targetMin, LIMITS.targetMax) + 0.5)
 	syncEco()
+	settingsChanged()
 	notify(true)
 	return smart.target
 end
@@ -1515,6 +1527,7 @@ function Smart.SetGoal(name)
 	if not (smart and GOALS[name]) then return nil end
 	smart.goal = name
 	syncMode()
+	settingsChanged()
 	return name
 end
 
@@ -1525,6 +1538,7 @@ function Smart.SetLocationGoal(key, name)
 	if type(smart.goals) ~= "table" then smart.goals = {} end
 	smart.goals[key] = name
 	syncMode()
+	settingsChanged()
 	return true
 end
 
@@ -1534,6 +1548,7 @@ function Smart.SetPace(name)
 	smart.pace = name
 	openRegion()
 	syncMode()
+	settingsChanged()
 	return name
 end
 
@@ -1543,6 +1558,7 @@ function Smart.SetFloor(scale)
 	if not (smart and scale) then return nil end
 	smart.scaleFloor = round2(clamp(scale, LIMITS.floorMin, LIMITS.floorMax))
 	dirtyLadder()
+	settingsChanged()
 	notify(true)
 	return smart.scaleFloor
 end
@@ -1558,7 +1574,8 @@ function Smart.SetScaleMax(scale)
 	dirtyLadder()
 	local live, base = current(SCALE), ns.Catalog and ns.Catalog.LIST and baseValues()[SCALE]
 	local keep = math.max(smart.scaleMax, base or 0)
-	if Smart.Enabled() and live and live > keep + 0.001 and usable(SCALE) and write(SCALE, live, keep) then rememberPos() end
+	if Smart.Enabled() and live and live > keep + HALF and usable(SCALE) and write(SCALE, live, keep) then rememberPos() end
+	settingsChanged()
 	notify(true)
 	return smart.scaleMax
 end
@@ -1579,6 +1596,15 @@ function Smart.State()
 	return state
 end
 
+-- The fps this machine cannot pass right now, or nil: the frame cap, else a confirmed display ceiling.
+function Smart.Limit()
+	local cap = capCVar()
+	if cap then return cap end
+	local smart = cfg()
+	local c = smart and smart.ceiling
+	return alive(c) and c.confirmed and c.fps or nil
+end
+
 function Smart.Ladder()
 	local out = {}
 	if not (ns.Catalog and ns.Catalog.LIST) then return out end
@@ -1586,18 +1612,18 @@ function Smart.Ladder()
 	return out
 end
 
-function Smart.Learned(key) return cfg() and cfg().learned[key] or nil end
-
 function Smart.ResetLearning(key)
 	local smart = cfg()
 	if not smart then return end
 	if key then
-		smart.learned[key] = nil
 		for _, a in pairs(smart.areas) do
-			if type(a) == "table" and a.locKey == key then a.pos, a.best, a.settledFps, a.cpu = nil, nil, nil, nil end
+			if type(a) == "table" and a.locKey == key then
+				a.pos, a.best, a.settledFps, a.cpu, a.cpuLow, a.freeFree, a.freeCost = nil, nil, nil, nil, nil, nil, nil
+				a.ceiling, a.noGain, a.lockLen, a.lockUntil, a.backoff, a.waitUntil = nil, nil, nil, nil, nil, nil
+			end
 		end
 	else
-		smart.learned, smart.areas, smart.gains, area = {}, {}, {}, nil
+		smart.areas, smart.gains, area = {}, {}, nil
 	end
 	dirtyLadder()
 	if smart.enabled then refresh("smart") end
@@ -1625,8 +1651,8 @@ function Smart.Adjust(key, values)
 	local zone = key == locKey and computeArea()
 	local smart = cfg()
 	local a = zone and smart and smart.areas[zone]
-	local pos, free
-	if type(a) == "table" and tonumber(a.pos) then pos, free = a.pos, a.free else pos, free = typicalPos(key) end
+	local pos, free = zonePos(a)
+	if not pos then pos, free = 0, freeOn() end
 	for cvar, value in pairs(valuesAt(pos, free, {})) do out[cvar] = value end
 	-- Another location type's values were only borrowed for this answer.
 	if key ~= locKey then
@@ -1736,9 +1762,6 @@ function Smart._PickRaise()
 	return cvar, from, to
 end
 
--- Calibrate's own A/B samples are not fed: reactive steps credit recoveries to the step (smart-v3, Learn).
-function Smart._Feed() end
-
 Smart._IsKnob, Smart._Current = isKnob, current
 function Smart._Fail(cvar) failed[cvar] = true end
 
@@ -1791,14 +1814,14 @@ local function argText(args) return type(args) == "table" and table.concat(args,
 
 local function stateLine()
 	local s = Smart.State()
-	local top = s.ceiling and (" (display tops out at " .. math.floor(s.ceiling + 0.5) .. ")") or ""
-	return ("Smart (%s): %s, %s fps, goal %s%s"):format(s.style, s.status, tostring(s.fps or "?"), tostring(math.floor(s.goal + 0.5)), top)
+	local limit = Smart.Limit()
+	local top = limit and (" (display tops out at " .. math.floor(limit + 0.5) .. ")") or ""
+	local holding = s.goal < s.target - 0.5 and (", holding " .. math.floor(s.goal + 0.5)) or ""
+	return ("Smart (%s): %s, %s fps, target %d%s%s"):format(s.style, s.status, tostring(s.fps or "?"), s.target, holding, top)
 end
 
 ns.On("FSG_READY", function()
 	dropStaleLearning()
-	migrateOldModes()
-	restoreOldCap()
 	local options = type(ns.db) == "table" and ns.db.options
 	if type(options) == "table" and options.suggest == nil then options.suggest = true end
 	startSampler()
@@ -1807,23 +1830,36 @@ ns.On("FSG_READY", function()
 	local commands = ns.commands
 	if not commands then return end
 	commands.smart = function(args)
-		local on = onOff(argText(args):match("%S+"))
-		if on ~= nil then Smart.SetEnabled(on) end
+		local word = argText(args):lower():match("%S+")
+		local on = onOff(word)
+		if word and on == nil then return say("Usage: /fsg smart [on|off]") end
+		if on and not Smart.SetEnabled(true) then return say("Smart mode stays off while Find my best settings runs") end
+		if on == false then Smart.SetEnabled(false) end
 		say(stateLine())
 	end
+	-- One number, "80%" or a decimal ("0.8" = 80% for the scale commands); nil for anything else.
+	local function number(args)
+		local word = argText(args):match("^%s*(%S+)%s*$")
+		return word and tonumber((word:gsub("%%$", "")))
+	end
+	local function percent(args)
+		local n = number(args)
+		return n and (n < 10 and n * 100 or n)
+	end
 	commands.target = function(args)
-		local fps = Smart.SetTarget(argText(args):match("%d+"))
-		say(fps and ("Target FPS " .. fps) or "Usage: /fsg target <fps 20-240>")
+		local fps = number(args)
+		if not (fps and fps >= LIMITS.targetMin and fps <= LIMITS.targetMax) then return say("Usage: /fsg target <fps 20-240>") end
+		say("Target FPS " .. Smart.SetTarget(fps))
 	end
 	commands.floor = function(args)
-		local percent = tonumber(argText(args):match("%d+"))
-		local scale = percent and Smart.SetFloor(percent / 100)
-		say(scale and ("Render scale minimum " .. math.floor(scale * 100 + 0.5) .. "%") or "Usage: /fsg floor <percent 33-100>")
+		local p = percent(args)
+		if not (p and p >= LIMITS.floorMin * 100 and p <= LIMITS.floorMax * 100) then return say("Usage: /fsg floor <percent 33-100>") end
+		say("Render scale minimum " .. math.floor(Smart.SetFloor(p / 100) * 100 + 0.5) .. "%")
 	end
 	commands.maxscale = function(args)
-		local percent = tonumber(argText(args):match("%d+"))
-		local scale = percent and Smart.SetScaleMax(percent / 100)
-		say(scale and ("Render scale maximum " .. math.floor(scale * 100 + 0.5) .. "%") or "Usage: /fsg maxscale <percent 100-200>")
+		local p = percent(args)
+		if not (p and p >= LIMITS.topMin * 100 and p <= LIMITS.topMax * 100) then return say("Usage: /fsg maxscale <percent 100-200>") end
+		say("Render scale maximum " .. math.floor(Smart.SetScaleMax(p / 100) * 100 + 0.5) .. "%")
 	end
 	commands.goal = function(args)
 		local first, second = argText(args):lower():match("^%s*(%S*)%s*(%S*)")
@@ -1847,6 +1883,24 @@ ns.On("FSG_READY", function()
 		end
 		say("Smart: " .. activeMode().name .. ". Usage: /fsg pace <aggressive|balanced|smooth>")
 	end
+end)
+
+-- The player changes the frame cap while Eco holds it: that is their own cap now, and Eco's goes back on top. Our own
+-- writes (Eco's cap, useMaxFPS 1) are told apart by their values: the event may come after the write returns.
+ns.On("CVAR_UPDATE", function(name)
+	local key = type(name) == "string" and name:lower()
+	if not ((key == "maxfps" or key == "usemaxfps") and ecoHolds()) then return end
+	local cap = cfg().ecoCap
+	if key == "maxfps" then
+		local v = tonumber(getCVar("maxFPS"))
+		if not v or v == calm.ecoAt then return end
+		cap.maxFPS = v
+	else
+		local v = tonumber(getCVar("useMaxFPS"))
+		if not v or v == 1 then return end
+		cap.useMaxFPS = v
+	end
+	syncEco()
 end)
 
 -- A refresh in the middle of an adjust writes the profile over its values: rewrite them and warm up again.
@@ -1879,13 +1933,21 @@ ns.On("ZONE_CHANGED_INDOORS", subzoneChanged)
 
 ns.On("PLAYER_LEAVING_WORLD", function() loading = true end)
 
+ns.On("CINEMATIC_START", function() calm.cinematic = true end)
+ns.On("PLAY_MOVIE", function() calm.cinematic = true end)
+ns.On("CINEMATIC_STOP", function() calm.cinematic = false end)
+ns.On("STOP_MOVIE", function() calm.cinematic = false end)
+
 ns.On("PLAYER_ENTERING_WORLD", function()
-	loading = false
+	loading, calm.cinematic = false, false
 	warm()
 end)
 
+-- A raise not yet judged goes back (Apply writes it at combat end): a fight is no place to test it.
 ns.On("FSG_COMBAT_START", function()
 	fight.low, fight.shown, fight.defer, fight.cuts = 0, false, false, nil
+	fight.revert = probe.active and not probe.back and probe.kind ~= "drop"
+	if fight.revert then revertProbe() end
 	probe.active, learnStep.active = false, false
 end)
 
@@ -1895,8 +1957,10 @@ ns.On("FSG_COMBAT_END", function()
 	if cuts then
 		for _, c in ipairs(cuts) do applyCut(c, "you, after combat") end
 	end
+	if fight.revert then rememberPos() end
+	syncEco()
 	local shown = fight.shown
-	fight.low, fight.shown, fight.defer, fight.cuts = 0, false, false, nil
+	fight.low, fight.shown, fight.defer, fight.cuts, fight.revert = 0, false, false, nil, false
 	if shown and ns.Fire then ns.Fire("FSG_COMBAT_LOW", nil) end
 	if Smart.Enabled() then warm() end
 	if not held then return end

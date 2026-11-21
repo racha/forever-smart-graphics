@@ -11,7 +11,7 @@ local N = UI.N
 local TARGET_MIN, TARGET_MAX, TARGET_STEP = 20, 240, 5
 local FLOOR_MIN, FLOOR_MAX, FLOOR_STEP = 33, 100, 5
 local SCALE_MAX_MIN = 100
-local LINE_H, LAG_SHOWN, FIGHT_DROP, FINISH_AFTER = 18, 10, 0.1, 30
+local LINE_H, LAG_SHOWN, LAG_SHARE, FIGHT_DROP, FINISH_AFTER = 18, 10, 0.05, 0.1, 30
 local LEARNED_X, LAG_X, HISTORY = 192, 222, 3
 
 local window, page
@@ -89,8 +89,6 @@ local function canFinish(state)
 	if state.ready then return true end
 	for _, scene in ipairs(state.scenes or {}) do if (scene.seconds or 0) >= FINISH_AFTER then return true end end
 end
-
-UI.CanFinishCalibration = canFinish
 
 UI.CanFinishCalibration = canFinish
 
@@ -185,8 +183,8 @@ local function tick()
 	local goal = state.goal or (state.cap and math.min(state.target or target(), state.cap)) or state.target or target()
 	local loc = ns.Location.Current() or {}
 	local fps = state.fps and tostring(math.floor(state.fps + 0.5)) or "--"
-	local ceiling = state.ceiling and string.format(L.NOW_CEILING, math.floor(state.ceiling + 0.5)) or ""
-	lines[1]:SetText(string.format(L.NOW_LINE, (UI.SmartStatus(state):gsub("^%l", string.upper)), fps, goal, ceiling, ns.Location.LABELS[loc.key] or L.UNKNOWN_PLACE, UI.SmartStyle()))
+	local ceiling = state.ceiling and Smart.Limit and Smart.Limit() and string.format(L.NOW_CEILING, math.floor(state.ceiling + 0.5)) or ""
+	lines[1]:SetText(string.format(L.NOW_LINE, (UI.SmartStatus(state):gsub("^%l", string.upper)), fps, math.floor(goal + 0.5), ceiling, ns.Location.LABELS[loc.key] or L.UNKNOWN_PLACE, UI.SmartStyle()))
 	lines[2]:SetText(state.cap and string.format(L.CAP, state.cap) or "")
 	local text = UI.ChangeText(state.last)
 	lines[3]:SetText(text and string.format(L.LAST, text) or L.NO_LAST)
@@ -197,9 +195,11 @@ end
 
 local function age(t)
 	local seconds = math.max(0, time() - (t or 0))
+	if seconds < 60 then return L.AGO_NOW end
 	if seconds < 3600 then return string.format(L.AGE_MIN, math.floor(seconds / 60)) end
 	if seconds < 86400 then return string.format(L.AGE_HOURS, math.floor(seconds / 3600)) end
-	return string.format(L.AGE_DAYS, math.floor(seconds / 86400))
+	local days = math.floor(seconds / 86400)
+	return days == 1 and L.AGE_DAY or string.format(L.AGE_DAYS, days)
 end
 
 -- Smart remembers a settled position per zone; the list groups them by location type, which is what Save as profile
@@ -221,12 +221,13 @@ local function learnedItems()
 	return items
 end
 
--- The worst places first, as Smart sorts them; the top LAG_SHOWN only.
+-- The worst places first, as Smart sorts them: those under the target at least LAG_SHARE of the time, the top
+-- LAG_SHOWN only.
 local function lagItems()
 	local items = {}
-	for i, area in ipairs(Smart.Areas and Smart.Areas() or {}) do
-		if i > LAG_SHOWN then break end
-		items[i] = area
+	for _, area in ipairs(Smart.Areas and Smart.Areas() or {}) do
+		if #items == LAG_SHOWN then break end
+		if (area.lagShare or 0) >= LAG_SHARE then items[#items + 1] = area end
 	end
 	return items
 end
@@ -259,10 +260,10 @@ local function forgetArea(area)
 	refresh()
 end
 
-local function rowNode(row, tip, extra)
+local function rowNode(row, tip, extra, select)
 	local node = extra or {}
 	node.cursorX, node.onFocus, node.tipRegion, node.tip = N.LABEL_X - 6, UI.RowFocus(row), row.tipAnchor, tip
-	return UI.Node(window, row, row.onClick, node)
+	return UI.Node(window, row, select or row.onClick, node)
 end
 
 local function buttonNode(button, tip) return UI.Node(window, button, button.action, { tip = { title = button:GetText(), lines = { tip }, side = "right" } }) end
@@ -322,7 +323,7 @@ local function refreshPage(content)
 
 	local items = learnedItems()
 	local learnedFold = content.learnedFold
-	learnedFold.count:SetText(string.format(L.LEARNED_COUNT, #items))
+	learnedFold.count:SetText(#items == 1 and L.LEARNED_COUNT_ONE or string.format(L.LEARNED_COUNT, #items))
 	flow:Add(learnedFold, N.SECTION_H, 0)
 	nodes[#nodes + 1] = foldNode(learnedFold, L.LEARNED_FOLD)
 	if learnedFold.IsOpen() then
@@ -332,17 +333,17 @@ local function refreshPage(content)
 			flow:Add(row, N.ROW_H)
 			row.label:SetText(item.label)
 			row.detail:SetText(string.format(item.zones == 1 and L.LEARNED_ROW_ONE or L.LEARNED_ROW, item.zones, item.t > 0 and age(item.t) or "-"))
-			row.onClick = function() saveAsProfile(item) end
-			row.onRightClick = function() resetOne(item) end
-			row.buttons[1].action, row.buttons[2].action = row.onClick, row.onRightClick
-			nodes[#nodes + 1] = rowNode(row, { title = item.label, lines = { L.LEARNED_TIP }, actions = { { "PAD1", L.SAVE_PROFILE }, { "PAD3", L.RESET } }, mouse = { L.SAVE_CLICK, L.RIGHT_RESET }, side = "above" }, {
+			-- Only the row's own buttons act on a click.
+			local save = function() saveAsProfile(item) end
+			row.buttons[1].action, row.buttons[2].action = save, function() resetOne(item) end
+			nodes[#nodes + 1] = rowNode(row, { title = item.label, lines = { L.LEARNED_TIP }, actions = { { "PAD1", L.SAVE_PROFILE }, { "PAD3", L.RESET } }, side = "above" }, {
 				prompts = { { "PAD3", L.RESET } },
 				onKey = function(key)
 					if key ~= "PAD3" then return end
 					resetOne(item)
 					return true
 				end,
-			})
+			}, save)
 			nodes[#nodes + 1] = buttonNode(row.buttons[1], L.LEARNED_TIP)
 			nodes[#nodes + 1] = buttonNode(row.buttons[2], L.RESET_ALL_TIP)
 		end
@@ -354,7 +355,7 @@ local function refreshPage(content)
 
 	local areas = lagItems()
 	local lagFold = content.lagFold
-	lagFold.count:SetText(string.format(L.LAGGED_COUNT, #areas))
+	lagFold.count:SetText(#areas == 1 and L.LAGGED_COUNT_ONE or string.format(L.LAGGED_COUNT, #areas))
 	flow:Add(lagFold, N.SECTION_H, 0)
 	nodes[#nodes + 1] = foldNode(lagFold, L.LAGGED)
 	if lagFold.IsOpen() then
@@ -364,10 +365,8 @@ local function refreshPage(content)
 			flow:Add(row, N.ROW_H)
 			row.label:SetText(area.name or area.key)
 			row.detail:SetText(lagDetail(area))
-			row.onClick = nil
-			row.onRightClick = function() forgetArea(area) end
-			row.buttons[1].action = row.onRightClick
-			nodes[#nodes + 1] = rowNode(row, { title = area.name or area.key, lines = { lagDetail(area), L.LAG_TIP }, actions = { { "PAD3", L.FORGET } }, mouse = { L.RIGHT_FORGET }, side = "above" }, {
+			row.buttons[1].action = function() forgetArea(area) end
+			nodes[#nodes + 1] = rowNode(row, { title = area.name or area.key, lines = { lagDetail(area), L.LAG_TIP }, actions = { { "PAD3", L.FORGET } }, side = "above" }, {
 				prompts = { { "PAD3", L.FORGET } },
 				onKey = function(key)
 					if key ~= "PAD3" then return end
@@ -381,7 +380,5 @@ local function refreshPage(content)
 	flow:Finish()
 	return nodes
 end
-
-UI.SmartLines = function() return page and page.lines end
 
 UI.AddPage({ key = "smart", order = 3, title = function() return L.TAB_SMART end, build = build, refresh = refreshPage, tick = tick })

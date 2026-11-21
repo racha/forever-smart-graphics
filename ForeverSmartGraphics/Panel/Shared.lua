@@ -15,13 +15,11 @@ UI.L = {
 	TAB_SMART = "Smart mode",
 	TAB_GENERAL = "Options",
 	TAB_OVERVIEW = "Overview",
-	TAB_PROFILES = "Profiles",
 	SELECT = "Select",
 	BACK = "Back",
 	CLOSE = "Close",
 	CANCEL = "Cancel",
 	OK = "OK",
-	MORE = "More",
 	CLEAR = "Clear",
 	REMOVE = "Remove",
 	RESET = "Reset",
@@ -31,19 +29,13 @@ UI.L = {
 	COMBAT = "Smart Graphics opens out of combat only",
 	RESUME_TEXT = "Combat closed Forever Smart Graphics. Open it again?",
 	STEPPER_TIP = "D-pad left and right change it.",
-	CHOICE_TIP = "A opens the list; D-pad left and right pick the next one.",
+	CHOICE_TIP = "Select opens the list; D-pad left and right pick the next one.",
 	CHOICE_TIP_MOUSE = "Click to pick from the list, or use the arrows beside it.",
-	SLIDER_TIP_MOUSE = "Drag the slider, click its track or arrows, or use the mouse wheel.",
+	SLIDER_TIP_MOUSE = "Drag the slider, or click its track or arrows.",
 	RIGHT_CLEAR = "Right-click: use inherited",
-	RIGHT_REMOVE = "Right-click: remove",
-	RIGHT_RESET = "Right-click: reset",
-	RIGHT_FORGET = "Right-click: forget",
-	SAVE_CLICK = "Click: save as profile",
-	NEW = "New",
 	NEW_TIP = "A new profile: empty, from your current settings or from a preset.",
 	NEW_PROFILE = "New profile...",
 	NEW_PROFILE_TITLE = "New profile",
-	PROFILE_TITLE = "%s (profile)",
 	START_FROM = "Start from:",
 	START_EMPTY = "Empty",
 	START_EMPTY_NOTE = "follows Default until you change a setting",
@@ -54,9 +46,8 @@ UI.L = {
 	START_CURRENT_TIP = "Every graphics setting as it is right now.",
 	START_PRESET_TIP = "%s: the preset's values.",
 	CREATE = "Create",
-	FROM_CURRENT = "From current settings",
 	EVERYWHERE_TEXT = "Use \"%s\" everywhere?",
-	EVERYWHERE_SUB = "Every location type uses this profile. Specific places keep their own.",
+	EVERYWHERE_SUB = "Every location type and every specific place uses this profile.",
 	RESET_VALUE = "Use inherited value",
 	IMPACT = { none = "None", low = "Low", medium = "Medium", high = "High", ["very high"] = "Very high" },
 	CAT_GRAPHICS = "Graphics",
@@ -70,19 +61,19 @@ UI.L = {
 	STRIP_CALIBRATING = "Finding best settings",
 	STRIP_SMART_VALUE = "%s · %s",
 	STRIP_TARGET = "target %d",
-	STRIP_HERE_TYPE = "%s is a %s zone.",
+	STRIP_HERE_TYPE = "%s counts as %s.",
 	STRIP_HERE_PLACE = "%s has a profile of its own.",
 	STRIP_CLICK_LOCATIONS = "Click: Locations",
 	STRIP_CLICK_PROFILE = "Click: edit this profile",
 	STRIP_CLICK_SMART = "Click: Smart mode",
 	STRIP_FPS_TIP = "%d fps now · target %d",
-	STRIP_GOAL = "Goal %d fps",
+	STRIP_GOAL = "Target %d fps",
 	WHY_TYPE = "%s zones use the profile %s.",
 	WHY_PLACE = "%s has its own profile, %s.",
-	WHY_HELD = "You are holding the profile %s everywhere. Switching by location is paused.",
+	WHY_HELD = "You are holding the profile %s everywhere, so it does not change by location.",
 	HOLD_RELEASE = "Back to automatic",
 	WHY_DEFAULT = "%s has no profile of its own, so it uses Default.",
-	WHY_OFF = "Smart Graphics is off. The game's own settings are in use.",
+	WHY_OFF = "Forever Smart Graphics is turned off. The game's own settings are in use.",
 	WHY_HERE = "You are in %s.",
 	WHY_SMART = "and Smart mode adjusts it to hold %s fps.",
 	WHY_EXACT = "exactly as you set it.",
@@ -90,13 +81,13 @@ UI.L = {
 	SECTION_HANDLE = "Let it handle itself",
 	SECTION_BY_LOCATION = "By location",
 	PROFILE_FOR = "Profile for %s",
-	PROFILE_FOR_TYPE_TIP = "The profile used in every %s.",
+	PROFILE_FOR_TYPE_TIP = "The profile for every place that counts as %s, unless the place has its own.",
 	PROFILE_FOR_PLACE_TIP = "The profile used in %s, before its location type's.",
 	EDIT = "Edit",
 	EDIT_TIP = "Opens every setting of %s.",
 	QUALITY_PRESET = "Quality preset",
 	PRESET_CUSTOM = "Custom",
-	PRESET_TIP = "Sets every quality setting and render scale of %s in one step.",
+	PRESET_TIP = "Sets every quality setting and render scale of %s in one step. Settings no preset covers are kept.",
 	PRESET_TIP_STEP = "Left: more FPS. Right: better looks.",
 	PRESET_TIP_CUSTOM = "Custom: the profile no longer matches a preset.",
 	PRESET_TIP_SMART = "Smart mode starts from these values.",
@@ -113,7 +104,7 @@ UI.L = {
 	START_HINT = "One guided run, then it leaves settings alone",
 	CALIBRATE_TIP_CLOSES = "Closes this window. Turns Smart mode off.",
 	CALIBRATE_CONFIRM = "Start Find my best settings?",
-	CALIBRATE_CONFIRM_SUB = "The window closes and Smart mode turns off while it runs.",
+	CALIBRATE_CONFIRM_SUB = "The window closes. Smart mode turns off and stays off. Finish saves one profile and uses it in every location and place.",
 	SUMMARY_PLACES = "%d specific places",
 	SUMMARY_PLACE = "1 specific place",
 	SET_UP_LOCATIONS = "Set up locations",
@@ -130,6 +121,7 @@ UI.L = {
 	ACTIVITY_DONE = "Graphics optimized",
 	ACTIVITY_EASED = "Eased for FPS",
 	AFTER_COMBAT_DONE = "Applied after combat: %d changes",
+	AFTER_COMBAT_ONE = "Applied after combat: 1 change",
 	NOW_USING = "Now using %s · %s",
 	CHANGED_ONE = "%d setting changed: %s",
 	CHANGED_MANY = "%d settings changed: %s",
@@ -150,6 +142,10 @@ UI.L = {
 	BANNER_LAG = "This place has run under your target: avg %d of %d fps.",
 	CHANGE_PROFILE = "Change profile",
 	CAL_LAST = "Last change: %s",
+	CAL_SCENE = "%s: %s",
+	CAL_DONE = "done",
+	CAL_NOW = "searching",
+	CAL_WAITING = "waiting",
 	PROFILES_HINT = "A profile is one full set of graphics settings.",
 	IN_USE = "In use here now",
 	USED_IN = "Used in %s",
@@ -158,6 +154,7 @@ UI.L = {
 	USED_COUNT = "Used in %d places",
 	USED_COUNT_ONE = "Used in 1 place",
 	OWN_COUNT = "%d settings of its own, the rest follow Default",
+	OWN_COUNT_ONE = "1 setting of its own, the rest follow Default",
 	OWN_NONE = "follows Default",
 	PRESET_NAMED = "%s preset",
 	PLACE_SUFFIX = "%s (specific place)",
@@ -178,103 +175,83 @@ UI.L = {
 	COLUMN_STYLE = "Smart goal",
 	COLUMN_STYLE_OFF = "Smart goal (Smart mode is off)",
 	YOU_ARE_HERE = "you are here",
-	GOAL_TYPE_TIP = "The Smart goal used in every %s. Default uses the Goal on the Smart mode page.",
+	GOAL_TYPE_TIP = "The Smart goal for every place that counts as %s. Same as Smart mode: the Goal on the Smart mode page.",
 	PLACES_WIN = "A specific place wins over its location type.",
 	ADD_THIS_PLACE = "Add this place: %s",
 	REMOVE_TIP = "This place goes back to its location type's profile.",
 	SMART_INTRO = "Smart mode starts from the profile of the place you are in, then lowers or raises settings to hold your target FPS with the best picture it can.",
 	RIGHT_NOW = "Right now",
-	NOW_LINE = "%s · %s fps, goal %d%s · %s · %s",
+	NOW_LINE = "%s · %s fps, target %d%s · %s · %s",
 	NOW_CEILING = " (display tops out at %d)",
 	BEFORE_THAT = "Before that: %s",
 	SMART_OFF_LINE = "Smart mode is off. Profiles are used exactly as set.",
 	LEARNED_FOLD = "What it learned",
 	LEARNED_COUNT = "%d locations",
+	LEARNED_COUNT_ONE = "1 location",
 	LAGGED_COUNT = "%d places",
+	LAGGED_COUNT_ONE = "1 place",
 	AGE_MIN = "%d min ago",
 	AGE_HOURS = "%d h ago",
 	AGE_DAYS = "%d days ago",
+	AGE_DAY = "1 day ago",
 	SECTION_CONTROLS = "Controls",
 	SECTION_NOTICES = "Notifications",
-	NOTICES_DESC = "All off by default. Turn on what you want to see.",
+	NOTICES_DESC = "Off by default, except the minimap pulse.",
 	SECTION_MINIMAP = "Minimap",
 	SECTION_START_OVER = "Start over",
 	RESTORE_KEEPS = "Your profiles stay.",
 	ABOUT_LINE = "Version %s · /fsg opens this window · /fsg help lists the commands",
-	COLUMN_SETTING = "Setting",
 	COLUMN_IMPACT = "FPS impact",
-	COLUMN_VALUE = "Value",
-	IMPACT_HEAD_TIP = { "How much frame rate a setting costs, per step up.", "None or Low: barely shows. Medium: a few fps. High: a clear cost. Very high: the biggest costs.", "Measured values come from Smart mode on this PC; the rest are tested on other machines or estimated." },
 	IMPACT_LINE = "FPS impact: %s (%s)",
 	IMPACT_PERCENT = "about %d%% per step, %s",
 	IMPACT_SOURCE = { measured = "measured on your PC", probe = "tested", estimate = "estimate" },
 	RESET_VALUE_TIP = "Clears this profile's own value; it uses the inherited one again.",
-	HEADER = "%s · %s: %s · %d fps",
-	HEADER_SMART = " · Smart: %s",
-	HEADER_MODE = " (%s)",
 	MODE_LINE = "%s: %s",
-	MODE_DEFAULT = "Default: %s",
+	MODE_DEFAULT = "Same as Smart mode",
 	MODE_OFF_TIP = "Used when Smart mode is on.",
-	HEADER_OFF = " · Switching off",
 	UNKNOWN_PLACE = "Unknown place",
 
-	PROFILES = "Profiles",
-	ACTIVE = "active",
 	GROUPS = { quality = "Quality", render = "Render", hidden = "Detail" },
-	INHERIT = { Default = "(Default)", ["your original"] = "(original)" },
 	INHERIT_TIP = "Not set in this profile: it uses %s.",
 	INHERIT_SOURCE = { Default = "the Default profile", ["your original"] = "your original setting" },
 	OWN_TIP = "Set in this profile.",
 	CLEAR_TIP = "Clear it to use the Default profile's value.",
 	CLEAR_DEFAULT_TIP = "Clear it to use your original setting.",
-	HEAVY_TIP = "Changing this can stutter for a moment: it is announced first.",
+	HEAVY_TIP = "Changing it makes the game stutter for a moment. Your own edit applies at once; a change from switching profiles waits and can be applied from the Overview page.",
 	UNSUPPORTED = "Not supported on this machine",
 	UNSUPPORTED_TIP = "The game ignores this setting on this machine, so it is left alone.",
-	PROFILE_TIP = "Press to edit this profile.",
-	PROFILE_TIP_MOUSE = "Click to edit this profile.",
-	PROFILE_ACTIVE_TIP = "In use here now.",
-	NEW_PRESET = "New from preset",
-	NEW_PRESET_TIP = "A new profile from one of the game's quality levels, or for best looks or best FPS.",
-	NEW_CURRENT = "New from current settings",
-	NEW_CURRENT_TIP = "A new profile with every setting as it is now.",
 	COPY = "Copy",
 	COPY_TIP = "A new profile with the same settings.",
 	RENAME = "Rename",
 	RENAME_TIP = "Type a new name with the keyboard.",
 	DELETE = "Delete",
-	DELETE_TIP = "Places that used it go back to Default.",
+	DELETE_TIP = "Location types that used it go back to Default; specific places that used it are removed.",
 	DELETE_TEXT = "Delete the profile \"%s\"?",
-	DELETE_SUB = "Places that used it go back to Default.",
+	DELETE_SUB = "Location types that used it go back to Default; specific places that used it are removed.",
 	USE_EVERYWHERE = "Use everywhere",
 	USE_EVERYWHERE_TIP = "Every location type uses this profile.",
 	USED_EVERYWHERE = "%s is now used everywhere",
 	DEFAULT_LOCKED = "The Default profile can't be renamed or deleted.",
-	PRESETS = "Presets",
 	PRESET_TIPS = { beyond = "Everything at maximum plus hidden detail settings beyond the in-game max (draw distance, grass, shadows, sharpening). Heaviest preset." },
 	LIMIT = "max on this machine: %s",
+	LIMIT_LOW = "lowest on this machine: %s",
 	SCALE_LIMIT_TIP = "The game's highest render scale on this display is %s, so it cannot go above that here.",
 	AUTO_NAME = "Profile %d",
 	NAME_TITLE = "Profile name",
 	NAME_HINT = "Enter: OK · Esc: cancel",
 
-	SWITCHING = "Switch by location",
-	SWITCHING_TIP = "Uses each location's profile when you get there. Off: the game's settings stay as they are.",
+	SWITCHING = "Manage my graphics",
+	SWITCHING_TIP = "Off: Forever Smart Graphics changes nothing and the game's own settings are in use. Smart mode needs it on.",
 	LOCATION_TYPES = "Location types",
 	PLACES = "Specific places",
 	DEFAULT = "Default",
-	HERE = "You are here",
-	HERE_LABEL = "%s (you are here)",
-	SWITCHING_SECTION = "Switching",
-	TYPE_TIP = "The profile used in every %s without a place of its own.",
+	TYPE_TIP = "The profile for every place that counts as %s, unless the place has its own.",
 	PLACE_TIP = "The profile used in %s, before its location type's.",
-	ADD_PLACE = "Add current place: %s",
 	ADD_PLACE_TIP = "Gives this place a profile of its own.",
-	PLACE_ADDED = "This place already has its own row.",
 	NO_PLACES = "No specific places yet.",
 
 	SMART_MISSING = "Smart mode not loaded",
 	SMART = "Smart mode",
-	SMART_TIP = "Holds your target FPS: lowers render scale first, down to its minimum, then the settings that cost most for least looks, and raises them again when there is room. It learns each location.",
 	TARGET = "Target FPS",
 	TARGET_TIP = "The frame rate Smart mode holds. Your FPS cap wins if it is lower.",
 	FLOOR = "Render scale minimum",
@@ -282,16 +259,13 @@ UI.L = {
 	SCALE_MAX = "Render scale maximum",
 	SCALE_MAX_TIP = "Smart mode never raises render scale above this. Above 100% is sharper and costs a lot of FPS.",
 	SCALE_MAX_LOCKED_TIP = "The game's highest render scale on this display is 100%, so Smart mode cannot go above it.",
-	NOW = "Now",
 	STATUS = "Status: %s",
-	FPS_GOAL = "%d fps · goal %d",
 	CAP = "Your FPS cap is %d",
 	LAST = "Last change: %s",
 	CHANGE = "%s %s to %s",
 	CHANGES = "Changes",
 	NO_CHANGES = "No changes yet",
 	NO_LAST = "No change yet",
-	LEARNED = "Learned per location",
 	LEARNED_ROW = "%d zones · %s",
 	LEARNED_ROW_ONE = "%d zone · %s",
 	LEARNED_TIP = "What Smart mode settled on here.",
@@ -311,12 +285,9 @@ UI.L = {
 	CALIBRATE = "Find my best settings",
 	CALIBRATE_LINE = "Move around a few kinds of places; the addon finds the best look that holds your FPS, saves it as a profile and then leaves your settings alone.",
 	START = "Start",
-	START_TIP = "Closes this window so you can move around. A small checklist shows what is left.",
 	FINISH = "Finish",
-	FINISH_TIP = "Saves what it found as a profile for every location.",
 	STOP = "Stop",
-	STOP_TIP = "Stops without saving; your settings go back.",
-	CAL_TITLE = "Finding your best settings · %d FPS",
+	CAL_TITLE = "Finding your best settings · %d fps",
 	CAL_SEARCHING = "searching %d s",
 	CAL_HOLDING = "holding",
 	CAL_FPS = "Now: %d fps",
@@ -324,25 +295,22 @@ UI.L = {
 	CAL_SAVED = "Saved \"%s\" and set it for every location. Run Find my best settings again any time.",
 	SAVED_AS = "saved as %s",
 
-	OPTIONS = "Options",
 	ANNOUNCE = "Announce texture changes before they stutter",
-	ANNOUNCE_TIP = "Texture changes wait 10 seconds with a notice and an Apply now button. Off: they wait for the next loading screen.",
+	ANNOUNCE_TIP = "Texture changes wait 10 seconds with a notice and an Apply now button. Off: they apply at the next loading screen, or by themselves after 10 minutes.",
 	MINIMAP = "Minimap button",
 	MINIMAP_TIP = "The Smart Graphics button on the minimap ring; drag it to move it.",
 	CHAT_LOG = "Log setting changes in chat",
 	CHAT_LOG_TIP = "A short chat line each time the addon changes a graphics setting.",
 	DEBUG = "Debug log",
 	DEBUG_TIP = "Keeps a log of what the addon changes, for bug reports.",
-	CONTROLS = "Controls",
+	CONTROLS = "Input",
 	CONTROLS_TIP = "Automatic follows what you used last: the mouse and keyboard, or a controller.",
 	INPUTS = { auto = "Automatic", mouse = "Mouse and keyboard", pad = "Controller" },
 	RESTORE = "Restore my original settings",
-	RESTORE_TIP = "Puts back the settings you had before Smart Graphics, and turns switching and Smart mode off.",
+	RESTORE_TIP = "Puts back the settings you had before Forever Smart Graphics, and turns off Manage my graphics and Smart mode.",
 	RESTORE_TEXT = "Put back your original graphics settings?",
-	RESTORE_SUB = "Switching by location and Smart mode turn off. Your profiles stay.",
+	RESTORE_SUB = "Manage my graphics and Smart mode turn off. Your profiles stay.",
 	ABOUT = "About",
-	VERSION = "Version %s",
-	ABOUT_TEXT = "/fsg opens this window.\n/fsg status: location, profile, smart mode, fps.\n/fsg use <profile>: that profile everywhere.\n/fsg smart on|off · /fsg target <fps> · /fsg floor <percent> · /fsg maxscale <percent>\n/fsg applynow: apply a waiting texture change.\n/fsg restore: your original settings.\n/fsg help: every command.",
 
 	NOTIFY_SETTING = "%s: %s",
 	NOTIFY_WAITS = " · waits for combat",
@@ -359,11 +327,11 @@ UI.L = {
 	COMPARTMENT_TIP = "Open the settings window",
 	MINIMAP_LINE = "Drag to move it.",
 	MINIMAP_FPS = "Show FPS on minimap",
-	MINIMAP_FPS_TIP = "A small frame rate readout under the minimap: green at your goal, yellow a little under it, red well under. Click it to open this window.",
+	MINIMAP_FPS_TIP = "A small frame rate readout under the minimap: white at your target, yellow a little under it, red well under. Click it to open this window.",
 	FPS = "%d fps",
 	FPS_TIP_PLACE = "%s · %s",
 	FPS_TIP_PROFILE = "Profile: %s",
-	FPS_TIP_SMART = "Smart: %s · goal %d fps",
+	FPS_TIP_SMART = "Smart: %s · target %d fps",
 	FPS_TIP_CLICK = "Click: open Smart Graphics",
 	FPS_TIP_CHANGES = "Last changes",
 	FPS_TIP_CHANGE = "%s · %s: %s",
@@ -400,7 +368,6 @@ function UI.AddPage(spec)
 end
 
 local function at(region, parent, x, y, point) region:SetPoint(point or "TOPLEFT", parent, "TOPLEFT", x, -y) end
-UI.At = at
 
 -- Two looks: "pad" (footer, button glyphs, focus cursor and glow) and "mouse" (hover highlight, visible buttons for
 -- every pad-only action, right-click). options.input is "auto", "mouse" or "pad"; auto follows the last input used
@@ -474,9 +441,16 @@ end
 local PRESET_ORDER = { "fps", "low", "fair", "good", "high", "ultra", "beyond" }
 local PRESET_MATCH = { "beyond", "fps", "ultra", "high", "good", "fair", "low" }
 
+-- Built once per preset until this machine's limits change; callers only read them.
+local presetCache = {}
+ns.On("FSG_LIMIT", function() presetCache = {} end)
+
 function UI.PresetValues(key)
-	local ok, values = pcall(ns.Catalog.BuildPreset, key)
-	return ok and type(values) == "table" and values or nil
+	if presetCache[key] == nil then
+		local ok, values = pcall(ns.Catalog.BuildPreset, key)
+		presetCache[key] = ok and type(values) == "table" and values or false
+	end
+	return presetCache[key] or nil
 end
 
 function UI.PresetName(key)
@@ -504,15 +478,19 @@ function UI.PresetEntries()
 	return entries
 end
 
--- Replaces the profile's own values with the preset's (the rest follow Default again), one refresh at the end. A
--- profile that matches no preset asks first.
+-- Replaces the profile's own values with the preset's, one refresh at the end: what the old preset set and the new one
+-- does not follows Default again; a setting neither preset covers keeps its own value. A profile that matches no
+-- preset asks first.
 local function replaceValues(window, id, key)
 	local profile, values = ns.Profiles.Get(id), UI.PresetValues(key)
 	if not (profile and values) then return end
+	local from = UI.PresetOf(id)
+	local old = from and UI.PresetValues(from) or {}
 	for _, entry in ipairs(ns.Catalog.LIST) do
 		local cvar = entry.cvar
 		local want, own = values[cvar], profile.values[cvar]
-		if not (want == nil and own == nil) and not (want ~= nil and own ~= nil and ns.Catalog.Same(cvar, own, want)) then ns.Profiles.SetValue(id, cvar, want) end
+		local kept = want == nil and (own == nil or old[cvar] == nil)
+		if not kept and not (want ~= nil and own ~= nil and ns.Catalog.Same(cvar, own, want)) then ns.Profiles.SetValue(id, cvar, want) end
 	end
 	UI.UserEdit()
 	UI.RefreshSoon(window)
@@ -576,24 +554,22 @@ end
 
 -- A button glyph from the active native glyph set (InputIconTextureSetUtility, a pure lookup; the InputIconTexture
 -- template registers with InputDeviceIconSetManager, so it is not used). Without a glyph set, the button's name.
-local ICON_STATE = { Normal = 1, Active = 4, Disabled = 5 }
+local ICON_STATE = { Normal = 1 }
 local LARGE_PROMPT_W, LARGE_PROMPT_H = 76, 75
 local GLYPH_NAME = { PAD1 = "A", PAD2 = "B", PAD3 = "X", PAD4 = "Y", PADLSHOULDER = "L1", PADRSHOULDER = "R1", PADDUP = "Up", PADDDOWN = "Down", PADDLEFT = "Left", PADDRIGHT = "Right", GAMEPAD_STICK_RIGHT_VERTICAL = "RS" }
 
-local function glyphAtlas(key, state)
+local function glyphAtlas(key)
 	local util = InputIconTextureSetUtility
 	if not (util and key) then return end
 	local ok, textures = pcall(util.GetActiveInputIconButtonTextures, key)
 	if not (ok and type(textures) == "table") then return end
-	return textures[ICON_STATE[state]] or textures[ICON_STATE.Normal]
+	return textures[ICON_STATE.Normal]
 end
-
-UI.GlyphAtlas = glyphAtlas
 
 local GlyphMixin = {}
 
 function GlyphMixin:Paint()
-	local atlas = glyphAtlas(self.key, self.disabled and "Disabled" or "Normal")
+	local atlas = glyphAtlas(self.key)
 	local icon = self.icon
 	icon:ClearAllPoints()
 	self.name:SetShown(not atlas)
@@ -603,8 +579,8 @@ function GlyphMixin:Paint()
 	end
 
 	icon:SetAtlas(atlas)
-	local info = C_Texture.GetAtlasInfo(atlas)
-	local pad = info and info.width == LARGE_PROMPT_W and info.height == LARGE_PROMPT_H and 5 or 0
+	local ok, info = pcall(C_Texture.GetAtlasInfo, atlas)
+	local pad = ok and type(info) == "table" and info.width == LARGE_PROMPT_W and info.height == LARGE_PROMPT_H and 5 or 0
 	icon:SetPoint("TOPLEFT", -pad, pad)
 	icon:SetPoint("BOTTOMRIGHT", pad, -pad)
 	icon:Show()
@@ -612,11 +588,6 @@ end
 
 function GlyphMixin:SetCode(key)
 	self.key = key
-	self:Paint()
-end
-
-function GlyphMixin:SetDisabled(disabled)
-	self.disabled = disabled
 	self:Paint()
 end
 
@@ -660,8 +631,10 @@ function UI.RaiseAbove(frame, window, kind)
 	local overlays = window.overlays or {}
 	window.overlays = overlays
 	overlays[frame] = true
+	-- The walk over every frame is a focus change's cost: kept until the window redraws (Window:Refresh clears it).
+	window.treeTop = window.treeTop or treeTop(window, overlays)
 	frame:SetFrameStrata(window:GetFrameStrata())
-	frame:SetFrameLevel(math.min(treeTop(window, overlays) + OVERLAY_RANK[kind], MAX_LEVEL))
+	frame:SetFrameLevel(math.min(window.treeTop + OVERLAY_RANK[kind], MAX_LEVEL))
 end
 
 -- SmartNavigation's pointer art: gamepad-largecursor-white x 0.8, GAMEPAD_SMARTNAV_CURSOR_COLOR, bobbing 4 units.
@@ -820,13 +793,14 @@ function UI.DialogArt(frame)
 end
 
 -- A confirm box in StaticPopup's look, built by the addon: StaticPopup_Show pushes Blizzard's popup binding set.
--- Pad: A presses the focused button, B the second (or spec.back), D-pad left/right moves. The box widens to its
+-- Pad: A presses the focused button, B the second, D-pad left/right moves. The box widens to its
 -- buttons; the text wraps to the final width.
 local DIALOG_W, DIALOG_SIDE, DIALOG_GAP, DIALOG_TEXT_PAD, CURSOR_OUTSIDE = 320, 24, 13, 40, -12
 local dialog
 local DialogMixin = {}
 
 function DialogMixin:Open(owner, spec)
+	if owner.modal then return end
 	self.owner, self.spec, self.index = owner, spec, 1
 	local two = spec.buttons[2] ~= nil
 	local buttons = UI.FitButton(self.Button1, spec.buttons[1]) + (two and UI.FitButton(self.Button2, spec.buttons[2]) + DIALOG_GAP or 0)
@@ -879,7 +853,7 @@ function DialogMixin:OnPad(key)
 		return self:Point()
 	end
 	if key == "PAD1" then return self:Press(self.index) end
-	if key == "PAD2" then return self:Press(self.spec.back or two and 2 or 1) end
+	if key == "PAD2" then return self:Press(two and 2 or 1) end
 end
 
 function UI.Dialog()
@@ -1133,24 +1107,25 @@ function UI.Choice(parent, width, onStep, onOpen)
 		drop.steppers[step] = stepper
 	end
 
-	function drop.Set(_, text, first, last)
-		drop.text:SetText(text)
+	local function paintSteppers()
 		for step, stepper in pairs(drop.steppers) do
-			local ended = step < 0 and first or step > 0 and last or drop.off
+			local ended = drop.off or step < 0 and drop.first or step > 0 and drop.last
 			stepper.icon:SetAtlas(stepper.atlas .. (ended and "-disabled" or ""), true)
 			stepper:SetEnabled(not ended)
 		end
+	end
+	function drop.Set(_, text, first, last)
+		drop.text:SetText(text)
+		drop.first, drop.last = first, last
+		paintSteppers()
 		paint()
 	end
-	-- Greyed: it keeps showing its value, takes no clicks.
+	-- Greyed: it keeps showing its value, takes no clicks; enabled again, an arrow at an end stays greyed.
 	function drop.SetEnabledState(_, on)
 		drop.off = not on
 		button:SetEnabled(on)
 		drop.text:SetFontObject(on and "GameFontHighlight" or "GameFontDisable")
-		for step, stepper in pairs(drop.steppers) do
-			stepper:SetEnabled(on)
-			stepper.icon:SetAtlas(stepper.atlas .. (on and "" or "-disabled"), true)
-		end
+		paintSteppers()
 	end
 	return drop
 end
@@ -1201,12 +1176,11 @@ end
 
 -- Opens a dropdown's list under its button; the arrow shows open until the list closes.
 function UI.OpenChoice(window, drop, entries, current, onPick, returnTo)
-	drop:SetOpen(true)
-	UI.List.Open({ window = window, cell = drop.button, returnTo = returnTo or drop:GetParent(), below = true, width = math.max(drop.button:GetWidth(), 160), entries = entries, current = current, onPick = onPick, onClose = function() drop:SetOpen(false) end })
+	if UI.List.Open({ window = window, cell = drop.button, returnTo = returnTo or drop:GetParent(), width = drop.button:GetWidth(), entries = entries, current = current, onPick = onPick, onClose = function() drop:SetOpen(false) end }) then drop:SetOpen(true) end
 end
 
 -- A slider with steppers, as the Settings panel's slider control (MinimalSliderWithSteppersTemplate's art), the value
--- in GameFontNormal 10 past its right. onStep(-1 | 1) from the steppers and the mouse wheel; onSet(value) when the
+-- in GameFontNormal 10 past its right. onStep(-1 | 1) from the steppers; onSet(value) when the
 -- thumb is dragged or the track clicked. slider:Set(value, text) moves the thumb; slider:SetRange(min, max, step).
 function UI.Slider(parent, width, min, max, step, onStep, onSet)
 	local slider = CreateFrame("Frame", nil, parent)
@@ -1225,8 +1199,6 @@ function UI.Slider(parent, width, min, max, step, onStep, onSet)
 		end)
 		slider.steppers[dir] = button
 	end
-	slider:EnableMouseWheel(true)
-	slider:SetScript("OnMouseWheel", function(_, delta) onStep(delta > 0 and 1 or -1) end)
 	-- A Slider takes no mouse until enabled (Blizzard's slider templates set enableMouse): without it no drag.
 	local bar = CreateFrame("Slider", nil, slider)
 	bar:EnableMouse(true)
@@ -1348,6 +1320,7 @@ end
 -- A row click: the left button does what A does (row.onClick), the right one what X or Y does (row.onRightClick).
 function UI.RowClick(row, button)
 	UI.NoteInput("mouse")
+	if row.disabled then return end
 	local fn = button == "RightButton" and row.onRightClick or button ~= "RightButton" and row.onClick
 	if fn then fn() end
 end
@@ -1428,16 +1401,16 @@ function UI.IconButton(parent, atlas, size, tip)
 	return button
 end
 
--- A modal list in native dropdown art (common-dropdown-bg, UI-Character-Info-Title header, UI-QuestTitleHighlight
--- focus, radial tick and gold text on the current entry), FCT's action picker in list mode; opts.below opens it under
--- a dropdown button, as a dropdown's menu (opts.width wide, no title), opts.returnTo gets the focus back. D-pad up/down moves (hold repeats,
--- wraps), A chooses, B closes; mouse hover, click, wheel, a click outside closes. The focused entry's detail shows
--- beside it. opts = { window, cell (focus returns there), title, entries = { { id, name, note, detail, disabled } },
--- current = id, onPick(entry) }. A disabled entry only shows its detail.
+-- A modal list in native dropdown art (common-dropdown-bg, UI-QuestTitleHighlight focus, radial tick and gold text on
+-- the current entry), a dropdown's menu under its button: as wide as its longest entry, at least opts.width, at most
+-- the window. D-pad up/down moves (hold repeats, wraps), A chooses, B closes; mouse hover, click, wheel, a click
+-- outside closes. The focused entry's detail shows beside it. opts = { window, cell (under it), returnTo (the focus
+-- goes back there; default cell), width, entries = { { id, name, detail } }, current = id, onPick(entry), onClose }.
 local List = {}
 UI.List = List
 
-local LIST_ROWS, LIST_ROW_H, LIST_W, LIST_HEADER = 12, 24, 320, 44
+-- A row's text sits 10 in from each side of the row and keeps 40 clear of the tick at its right.
+local LIST_ROWS, LIST_ROW_H, LIST_TOP, LIST_ROW_PAD, LIST_TEXT_PAD = 12, 24, 8, 20, 40
 local listFrame, state
 
 local function listRow(i)
@@ -1454,8 +1427,6 @@ local function listRow(i)
 	r.name:SetPoint("LEFT", 10, 0)
 	r.name:SetJustifyH("LEFT")
 	r.name:SetWordWrap(false)
-	r.note = r:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-	r.note:SetPoint("RIGHT", -24, 0)
 	r.tick = r:CreateTexture(nil, "OVERLAY")
 	r.tick:SetAtlas("common-dropdown-icon-radialtick-yellow")
 	r.tick:SetSize(16, 16)
@@ -1473,7 +1444,6 @@ end
 
 local function listDraw()
 	local entries = state.entries
-	listFrame.header.text:SetText(state.title or "")
 	local total = #entries
 	state.offset = math.max(0, math.min(state.offset, total - LIST_ROWS))
 	if state.index <= state.offset then state.offset = state.index - 1 end
@@ -1487,9 +1457,8 @@ local function listDraw()
 		if entry then
 			r.name:SetText(entry.name)
 			local current = state.current ~= nil and entry.id == state.current
-			r.name:SetFontObject(entry.disabled and "GameFontDisable" or current and "GameFontNormal" or "GameFontHighlight")
-			r.name:SetWidth(state.width - 20 - 40 - (entry.note and 110 or 0))
-			r.note:SetText(entry.note or "")
+			r.name:SetFontObject(current and "GameFontNormal" or "GameFontHighlight")
+			r.name:SetWidth(state.width - LIST_ROW_PAD - LIST_TEXT_PAD)
 			r.tick:SetShown(current)
 			r.highlight:SetShown(index == state.index)
 		end
@@ -1500,7 +1469,7 @@ local function listDraw()
 	local focused = listFrame.rows[state.index - state.offset]
 	if focused then state.window.cursor:Attach(focused, 0) end
 	local entry = entries[state.index]
-	if entry and entry.detail then UI.Tooltip(listFrame, { title = entry.name, lines = { entry.detail }, side = state.side }) else UI.HideTooltip() end
+	if entry and entry.detail then UI.Tooltip(listFrame, { title = entry.name, lines = { entry.detail }, side = "right" }) else UI.HideTooltip() end
 end
 
 function List.Focus(index)
@@ -1516,7 +1485,7 @@ end
 
 function List.Choose(index)
 	local entry = state.entries[index]
-	if not entry or entry.disabled then return end
+	if not entry then return end
 	local pick = state.onPick
 	List.Close()
 	pick(entry)
@@ -1540,7 +1509,6 @@ function List.Frame() return listFrame end
 
 local function createList()
 	listFrame = CreateFrame("Frame", nil, UIParent)
-	listFrame:SetSize(LIST_W, LIST_HEADER + LIST_ROWS * LIST_ROW_H + 12)
 	listFrame:SetClampedToScreen(true)
 	listFrame:EnableMouse(true)
 	listFrame:EnableMouseWheel(true)
@@ -1554,11 +1522,9 @@ local function createList()
 	bg:SetAlpha(0.925)
 	bg:SetPoint("TOPLEFT", -10, 3)
 	bg:SetPoint("BOTTOMRIGHT", 10, -3)
-	listFrame.header = UI.SectionHeader(listFrame, 0, 2, LIST_W, "")
-	listFrame.header.text:SetWordWrap(false)
 	listFrame.up = listFrame:CreateTexture(nil, "OVERLAY")
 	listFrame.up:SetAtlas("minimal-scrollbar-arrow-top", true)
-	listFrame.up:SetPoint("TOPRIGHT", listFrame, "TOPRIGHT", -2, -LIST_HEADER + 2)
+	listFrame.up:SetPoint("TOPRIGHT", listFrame, "TOPRIGHT", -2, -LIST_TOP + 2)
 	listFrame.down = listFrame:CreateTexture(nil, "OVERLAY")
 	listFrame.down:SetAtlas("minimal-scrollbar-arrow-bottom", true)
 	listFrame.down:SetPoint("BOTTOMRIGHT", listFrame, "BOTTOMRIGHT", -2, 4)
@@ -1571,37 +1537,31 @@ local function createList()
 	listFrame:Hide()
 end
 
+-- Refused while another modal (the name box, the New profile dialog) owns the window; returns true when open.
 function List.Open(opts)
+	local window = opts.window
+	if window.modal and window.modal ~= List then return end
 	if not listFrame then createList() end
 	if state then List.Close() end
 
-	local width, top = opts.width or LIST_W, opts.title and LIST_HEADER or 8
-	state = { window = opts.window, cell = opts.cell, returnTo = opts.returnTo or opts.cell, title = opts.title, entries = opts.entries, current = opts.current, onPick = opts.onPick, onClose = opts.onClose, width = width, index = 1, offset = 0 }
+	local width, fit = opts.width, listRow(1).name
+	for _, entry in ipairs(opts.entries) do
+		fit:SetText(entry.name)
+		width = math.max(width, (UI.TextWidth(fit) or 0) + LIST_ROW_PAD + LIST_TEXT_PAD)
+	end
+	width = math.min(width, window:GetWidth())
+	state = { window = window, returnTo = opts.returnTo or opts.cell, entries = opts.entries, current = opts.current, onPick = opts.onPick, onClose = opts.onClose, width = width, index = 1, offset = 0 }
 	for i, entry in ipairs(opts.entries) do if entry.id == opts.current then state.index = i end end
-	listFrame:SetSize(width, top + math.min(LIST_ROWS, #opts.entries) * LIST_ROW_H + 8 + (opts.title and 4 or 0))
-	listFrame.header:SetShown(opts.title ~= nil)
-	listFrame.header:SetWidth(width)
+	listFrame:SetSize(width, LIST_TOP + math.min(LIST_ROWS, #opts.entries) * LIST_ROW_H + 8)
 	for i = 1, LIST_ROWS do
 		local r = listRow(i)
-		r:SetWidth(width - 20)
+		r:SetWidth(width - LIST_ROW_PAD)
 		r:ClearAllPoints()
-		r:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 10, -(top + (i - 1) * LIST_ROW_H))
+		r:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 10, -(LIST_TOP + (i - 1) * LIST_ROW_H))
 	end
-	listFrame.up:SetPoint("TOPRIGHT", listFrame, "TOPRIGHT", -2, -top + 2)
-	local window, cell = state.window, opts.cell
-	local cellX, windowX = cell:GetCenter() or 0, window:GetCenter() or 0
 	listFrame:SetScale(window:GetScale())
 	listFrame:ClearAllPoints()
-	if opts.below then
-		listFrame:SetPoint("TOPLEFT", cell, "BOTTOMLEFT", 0, -4)
-		state.side = "right"
-	elseif cellX <= windowX then
-		listFrame:SetPoint("TOPLEFT", cell, "TOPRIGHT", 8, 0)
-		state.side = "right"
-	else
-		listFrame:SetPoint("TOPRIGHT", cell, "TOPLEFT", -8, 0)
-		state.side = "left"
-	end
+	listFrame:SetPoint("TOPLEFT", opts.cell, "BOTTOMLEFT", 0, -4)
 	listFrame.catcher:Show()
 	UI.RaiseAbove(listFrame.catcher, window, "catcher")
 	UI.RaiseAbove(listFrame, window, "picker")
@@ -1610,6 +1570,7 @@ function List.Open(opts)
 	UI.HideTooltip()
 	window:SetPrompts({ { "PAD1", L.SELECT }, { "PAD2", L.BACK } })
 	listDraw()
+	return true
 end
 
 -- Closing returns the focus to the cell and redraws the window.
@@ -1630,6 +1591,17 @@ end
 -- highlight text). Keyboard and mouse: Enter or OK accepts, Esc or Cancel closes; on the pad A accepts the shown
 -- name, B cancels. The box takes keyboard focus only while open and gives it back on close.
 -- opts = { window, cell, title, text, onOK(name) }.
+-- An edit box in one of our boxes leaves up and down to the box: they move its focus as on the pad (EditBox
+-- OnArrowPressed; while it has keyboard focus the window sees no keys). Left and right stay the text cursor's.
+local EDIT_ARROWS = { UP = "PADDUP", DOWN = "PADDDOWN" }
+
+function UI.EditArrows(edit)
+	edit:SetScript("OnArrowPressed", function(_, key)
+		local window, pad = UI.Current(), EDIT_ARROWS[key]
+		if window and pad then window:Pad(pad) end
+	end)
+end
+
 local Name = {}
 UI.Name = Name
 local nameFrame, nameState
@@ -1640,6 +1612,7 @@ function Name.Close(accept)
 	nameState = nil
 	nameFrame.edit:ClearFocus()
 	nameFrame:Hide()
+	nameFrame.shade:Hide()
 	local window = opts.window
 	window.modal = nil
 	window.focus = { region = opts.cell }
@@ -1664,6 +1637,13 @@ local function createName()
 	nameFrame:EnableMouse(true)
 	nameFrame:Hide()
 	UI.DialogArt(nameFrame)
+	-- The window dimmed under the box and closed to clicks, as under the New profile dialog.
+	nameFrame.shade = CreateFrame("Frame", nil, UIParent)
+	nameFrame.shade:EnableMouse(true)
+	nameFrame.shade:Hide()
+	local dim = nameFrame.shade:CreateTexture(nil, "BACKGROUND")
+	dim:SetColorTexture(0, 0, 0, 0.5)
+	dim:SetAllPoints()
 	nameFrame.glow = UI.Glow(nameFrame, nameFrame, "gamepad-uiframediamondmetal-focus-large", -6, 6, 6, -6)
 	nameFrame:SetScript("OnShow", function(self) self.glow:Show() end)
 	nameFrame:SetScript("OnHide", function(self) self.glow:Hide() end)
@@ -1676,6 +1656,7 @@ local function createName()
 	edit:SetMaxLetters(NAME_MAX)
 	edit:SetScript("OnEnterPressed", function() Name.Close(true) end)
 	edit:SetScript("OnEscapePressed", function() Name.Close(false) end)
+	UI.EditArrows(edit)
 	nameFrame.edit = edit
 	nameFrame.hint = nameFrame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
 	nameFrame.hint:SetPoint("TOP", edit, "BOTTOM", 0, -6)
@@ -1690,16 +1671,22 @@ local function createName()
 end
 
 function Name.Open(opts)
+	local window = opts.window
+	if window.modal and window.modal ~= Name then return end
 	if not nameFrame then createName() end
 	if nameState then Name.Close(false) end
 
 	nameState = opts
-	local window = opts.window
 	nameFrame.title:SetText(opts.title)
 	nameFrame.edit:SetText(opts.text or "")
 	nameFrame:SetScale(window:GetScale())
 	nameFrame:ClearAllPoints()
 	nameFrame:SetPoint("TOP", window, "TOPLEFT", window:GetWidth() / 2, -210)
+	nameFrame.shade:SetScale(window:GetScale())
+	nameFrame.shade:ClearAllPoints()
+	nameFrame.shade:SetAllPoints(window)
+	nameFrame.shade:Show()
+	UI.RaiseAbove(nameFrame.shade, window, "catcher")
 	UI.RaiseAbove(nameFrame, window, "dialog")
 	UI.HideTooltip()
 	nameFrame:Show()
@@ -1832,7 +1819,7 @@ local N = {
 	SECTION_TITLE_Y = 16, LABEL_X = 37, LABEL_END = -85, CHECK_X = -80, SLIDER_X = -80, SLIDER_W = 250, DROP_X = -48,
 	DROP_W = 220, HOVER_LEFT = -10, HOVER_RIGHT = -5, TIP_X = -10, TIP_CUT = 80,
 	CAT_W = 175, CAT_H = 20, CAT_HEADER_H = 30, CAT_GAP = 2, CAT_SPACER = 18, CAT_LABEL_X = 36, CAT_HEADER_X = 20,
-	CAT_INDENT = 10, BUTTON_W = 96, BUTTON_H = 22, CLOSE_X = -16, CLOSE_Y = 16, BAR_W = 16,
+	BUTTON_W = 96, BUTTON_H = 22, CLOSE_X = -16, CLOSE_Y = 16, BAR_W = 16,
 }
 N.CONTAINER_X = N.LIST_X + N.LIST_W + N.LIST_GAP
 N.CONTAINER_W = N.W - N.CONTAINER_X - N.RIGHT
@@ -1873,22 +1860,14 @@ function Flow:Finish()
 	self.content:SetHeight(self.y + N.PAD_TOP)
 end
 
--- A section header (SettingsListSectionHeaderTemplate: 45 tall, GameFontHighlightLarge at 7, -16). impact adds the
--- "FPS impact" column header over the rows' impact column.
-function UI.Section(parent, text, impact)
+-- A section header (SettingsListSectionHeaderTemplate: 45 tall, GameFontHighlightLarge at 7, -16).
+function UI.Section(parent, text)
 	local section = CreateFrame("Frame", nil, parent)
 	section:SetSize(N.ROW_W, N.SECTION_H)
 	section.title = section:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
 	section.title:SetPoint("TOPLEFT", N.TITLE_X, -N.SECTION_TITLE_Y)
 	section.title:SetJustifyH("LEFT")
 	section.title:SetText(text or "")
-	if impact then
-		section.impact = section:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-		section.impact:SetPoint("BOTTOMLEFT", N.IMPACT_X, 2)
-		section.impact:SetWidth(N.IMPACT_W)
-		section.impact:SetJustifyH("CENTER")
-		section.impact:SetText(L.COLUMN_IMPACT)
-	end
 	return section
 end
 
@@ -1947,10 +1926,10 @@ function UI.RowChoice(row, onStep, onOpen, x, width)
 	return choice
 end
 
--- A grey hint right of a row's control (or at x from the row's left).
-function UI.RowHint(row, text, anchor, x)
+-- A grey hint right of a row's control.
+function UI.RowHint(row, text, anchor)
 	row.hint = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-	if anchor then row.hint:SetPoint("LEFT", anchor, "RIGHT", 8, 0) else row.hint:SetPoint("LEFT", row, "LEFT", x, 0) end
+	row.hint:SetPoint("LEFT", anchor, "RIGHT", 8, 0)
 	row.hint:SetJustifyH("LEFT")
 	row.hint:SetText(text or "")
 	return row.hint
@@ -1959,7 +1938,8 @@ end
 -- Greys a row and its controls (they keep showing their value) or brings them back.
 function UI.SetRowEnabled(row, on)
 	row.label:SetFontObject(on and "GameFontNormal" or "GameFontDisable")
-	for _, control in ipairs({ row.control, row.second, row.button }) do
+	for _, key in ipairs({ "control", "second", "button" }) do
+		local control = row[key]
 		if control and control.SetEnabledState then control:SetEnabledState(on) elseif control and control.SetEnabled then control:SetEnabled(on) end
 	end
 	row.disabled = not on

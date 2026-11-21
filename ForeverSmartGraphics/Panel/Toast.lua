@@ -97,9 +97,10 @@ local function slotAt(i)
 	slot.text = slot:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	slot.sub = slot:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	slot.third = slot:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	-- The title wraps rather than end in "..."; the detail lines stay one line each.
 	for _, fs in ipairs({ slot.text, slot.sub, slot.third }) do
 		fs:SetJustifyH("CENTER")
-		fs:SetWordWrap(false)
+		fs:SetWordWrap(fs == slot.text)
 		fs:SetShadowColor(0, 0, 0, 1)
 		fs:SetShadowOffset(1, -1)
 	end
@@ -176,6 +177,7 @@ end
 local function drawSlot(slot, item)
 	slot.item = item
 	slot.text:SetText(item.text)
+	slot.text:SetWidth(math.min(MAX_W - 2 * PAD, textWidth(slot.text) + 2))
 	slot.sub:SetText(item.sub or "")
 	-- A detail too long for the line drops its list (the tooltip has it) rather than end in "...".
 	if item.subShort and textWidth(slot.sub) > MAX_W - 2 * PAD then slot.sub:SetText(item.subShort) end
@@ -245,7 +247,7 @@ local function drawLine(slot, item)
 	for _, half in ipairs(slot.line) do half:SetShown(shown) end
 	if not shown then return end
 
-	local half = textWidth(slot.text) * 0.4
+	local half = math.min(textWidth(slot.text), MAX_W - 2 * PAD) * 0.4
 	local fraction, alpha = 1, 1
 	if item.shimmer then
 		fraction = SHIMMER_LOW + (1 - SHIMMER_LOW) * (0.5 + 0.5 * math.sin(GetTime() * 2 * math.pi / SHIMMER_EVERY))
@@ -340,7 +342,7 @@ function Notify.Show(kind, spec)
 		table.insert(items, 1, item)
 		while #items > MAX_ITEMS do table.remove(items) end
 	end
-	for _, field in ipairs({ "text", "sub", "subShort", "buttons", "line", "hideAt", "onClose", "icon", "tag", "subIcon", "third", "shimmer", "tip", "keepOnHover" }) do item[field] = spec[field] end
+	for _, field in ipairs({ "text", "sub", "subShort", "buttons", "line", "hideAt", "onClose", "tag", "subIcon", "third", "shimmer", "tip", "keepOnHover" }) do item[field] = spec[field] end
 	Notify.Layout()
 	return item
 end
@@ -380,7 +382,8 @@ local function inCombat() return (ns.InCombat or InCombatLockdown)() end
 function UI.AnnounceOn() return ns.db.options.announce == true end
 
 local function pending(info)
-	if not (info and UI.AnnounceOn()) then
+	-- A quiet change (announce off) waits without a countdown; the Overview banner still offers Apply now.
+	if not (info and UI.AnnounceOn() and not info.quiet) then
 		dismissed, lastSignature = nil, nil
 		return Notify.Hide("pending")
 	end
@@ -396,7 +399,7 @@ local function pending(info)
 		text = text,
 		buttons = { { L.APPLY_NOW, function()
 			Notify.Hide("pending")
-			ns.Apply.ApplyPending("user", { user = true })
+			ns.Apply.ApplyPending()
 		end } },
 		line = { endsAt = GetTime() + seconds, total = total, paused = paused, left = seconds },
 		onClose = function() dismissed = sig end,
@@ -531,7 +534,9 @@ local function drawRun()
 	local latest = changes[#changes]
 	local style = UI.SmartStyle()
 	local more = #changes > 1 and string.format(L.ACTIVITY_MORE, #changes - 1) or ""
+	if run.dismissed then return end
 	Notify.Show("smart", {
+		onClose = function() if run then run.dismissed = true end end,
 		text = rising(latest) and L.ACTIVITY_RAISE or L.ACTIVITY_LOWER,
 		tag = style ~= "" and style or nil,
 		subIcon = rising(latest) and UP or DOWN,
@@ -561,8 +566,6 @@ local function netChanges(changes)
 	end
 	return out
 end
-
-UI.NetChanges = netChanges
 
 local function summarize()
 	local changes = netChanges(run.changes)
@@ -598,7 +601,14 @@ function Notify.Poll(now)
 		run = nil
 		return Notify.Hide("smart")
 	end
-	if now - run.last >= SETTLE_AFTER then return summarize() end
+	if now - run.last >= SETTLE_AFTER then
+		-- A run whose notice was closed ends without a summary.
+		if run.dismissed then
+			run = nil
+			return
+		end
+		return summarize()
+	end
 	drawRun()
 end
 
@@ -637,7 +647,7 @@ ns.On("FSG_CHANGES", function(a, b)
 	if type(a) == "table" and (a.source or a.reason) then changes, source, reason = a.changes or {}, a.source, a.reason end
 	if type(changes) ~= "table" or #changes == 0 then return end
 	if reason == "after combat" or source == "after combat" then
-		if UI.SmartNoticeOn() then otherBatch("done", string.format(L.AFTER_COMBAT_DONE, #changes), changes) end
+		if UI.SmartNoticeOn() then otherBatch("done", #changes == 1 and L.AFTER_COMBAT_ONE or string.format(L.AFTER_COMBAT_DONE, #changes), changes) end
 		return
 	end
 	local handler = BATCH[source]
@@ -665,15 +675,18 @@ local function cutNames(cuts)
 		local entry = ns.Catalog.Get(cvar)
 		names[#names + 1] = entry and entry.label or tostring(cvar)
 	end
-	return table.concat(names, ", ")
+	-- Too long for the line: the first name and how many more.
+	return table.concat(names, ", "), names[1] and names[1] .. (#names > 1 and string.format(L.CHANGED_MORE, #names - 1) or "")
 end
 
 ns.On("FSG_COMBAT_LOW", function(info)
 	if not (info and ns.Smart and UI.SmartNoticeOn()) then return end
 	Notify.Hide("smart")
+	local sub, subShort = cutNames(info.cuts)
 	Notify.Show("combat", {
 		text = string.format(L.COMBAT_LOW, math.floor((info.fps or 0) + 0.5), math.floor((info.goal or 0) + 0.5)),
-		sub = cutNames(info.cuts),
+		sub = sub,
+		subShort = subShort,
 		buttons = {
 			{ L.LOWER_NOW, function()
 				Notify.Hide("combat")
@@ -690,4 +703,3 @@ end)
 ns.On("FSG_COMBAT_START", function() Notify.Hide("smart") end)
 ns.On("FSG_COMBAT_END", function() Notify.Hide("combat") end)
 
-UI.Toast = { Frame = function() return frame end }

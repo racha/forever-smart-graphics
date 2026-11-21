@@ -18,6 +18,8 @@ Please crop out character names and chat from screenshots.
 ```
 ForeverSmartGraphics/   the addon (this folder is the release zip)
   Core.lua              namespace, saved settings, events, commands
+  News.lua              the What's new notes: which to show after an update
+  NewsData.lua          generated from CHANGELOG.md, never edited by hand
   Catalog.lua           every setting: range, description, FPS impact, presets
   Profiles.lua          profiles and their assignment to places
   Location.lua          where you are

@@ -8,8 +8,6 @@ Prefer full control? Build your own profiles and have them switch by themselves 
 
 [CurseForge](https://www.curseforge.com/wow/addons/forever-smart-graphics) · [Releases](https://github.com/racha/forever-smart-graphics/releases) · [Issues](https://github.com/racha/forever-smart-graphics/issues)
 
-> **Beta.** This is a test release. Please try it and report anything odd you see.
-
 ![Forever Smart Graphics](site/img/store/00-overview.jpg)
 
 ## What it does
@@ -18,8 +16,9 @@ Prefer full control? Build your own profiles and have them switch by themselves 
   - **Goal**: FPS, Balanced, Fidelity or Eco (caps FPS at your target to save battery).
   - **Pace**: Aggressive (changes on the go, fast), Balanced (changes on the go, calmly) or Smooth (changes only when you enter a new area).
   - It ignores short stutters, remembers every zone, and changes nothing in combat.
-- **Profiles**: every graphics setting, including hidden engine settings the Options menu doesn't show. Start from a preset (Low, Fair, Good, High, Ultra, Beyond Ultra, Max FPS), from your current settings, or empty.
+- **Profiles**: every graphics setting, including hidden engine settings the Options menu doesn't show, render scale up to 200% where your display allows it, and anti-aliasing. Start from a preset (Low, Fair, Good, High, Ultra, Beyond Ultra, Max FPS), from your current settings, or empty.
 - **Switch by location**: a profile for each kind of place (city, open world, dungeon, raid, battleground, arena) and for specific places such as Stormwind.
+- **Macros**: hold any profile from a button and go back to automatic with the next press.
 - **Find my best settings**: a one-time guided run that saves one profile and then leaves your settings alone.
 - **Beyond Ultra**: every menu setting at its top plus hidden settings past the menu's Ultra.
 - **FPS on the minimap**: a small readout under the zone name that pulses when the addon changes something.

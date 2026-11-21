@@ -1,5 +1,5 @@
 -- Every graphics setting the addon knows: ranges, labels and the pure helpers on them. No writes here.
--- Entry kinds: "level" (integer 0..max, 0–1 toggles too), "scale" (RenderScale), "range" (numeric with a step),
+-- Entry kinds: "level" (integer 0..max, 0-1 toggles too), "scale" (RenderScale), "range" (numeric with a step),
 -- "choice" (one of entry.choices).
 local _, ns = ...
 local Catalog = {}
@@ -12,9 +12,9 @@ local OFF_ON = { [0] = "Off", "On" }
 local LOW_ULTRA = { [0] = "Low", "Fair", "Good", "High", "Ultra" }
 local OFF_ULTRA = { [0] = "Off", "Low", "Good", "High", "Ultra" }
 local OFF_HIGH = { [0] = "Off", "Low", "Good", "High" }
-local LOW_HIGH = { [0] = "Low", "Good", "High" }
+local PARTICLES = "graphicsParticleDensity"
 
--- Level ranges are the options Blizzard's Graphics settings offer (probed on 1.60.1).
+-- Level ranges and names are the options Blizzard's Graphics settings offer (probed on 1.60.1).
 local function level(cvar, label, max, extra)
 	local entry = { cvar = cvar, group = "quality", label = label, kind = "level", min = 0, max = max, step = 1, visual = 1 }
 	for k, v in pairs(extra or {}) do entry[k] = v end
@@ -30,22 +30,22 @@ end
 Catalog.LIST = {
 	level("graphicsShadowQuality", "Shadow quality", 5, { smart = true, visual = 3, names = { [0] = "Low", "Fair", "Good", "High", "Ultra", "Ultra High" } }),
 	level("graphicsLiquidDetail", "Liquid detail", 3, { smart = true, names = { [0] = "Low", "Fair", "Good", "High" } }),
-	level("graphicsPBRLiquidDetail", "Liquid shading", 2, { names = LOW_HIGH }),
-	level("graphicsParticleDensity", "Particle density", 5, { smart = true, visual = 2, min = 1, names = { [0] = "Off", "Low", "Fair", "Good", "High", "Ultra" } }),
+	level("graphicsPBRLiquidDetail", "Liquid shading", 2, { names = { [0] = "Low", "High", "Ultra" } }),
+	level(PARTICLES, "Particle density", 5, { smart = true, visual = 2, min = 1, lo = 0, hi = 5, names = { [0] = "Off", "Low", "Fair", "Good", "High", "Ultra" } }),
 	level("graphicsSSAO", "Ambient occlusion", 4, { smart = true, visual = 2, names = OFF_ULTRA }),
 	level("graphicsDepthEffects", "Depth effects", 3, { smart = true, visual = 2, names = OFF_HIGH }),
-	level("graphicsComputeEffects", "Compute effects", 4, { smart = true, visual = 2, names = OFF_ULTRA }),
+	level("graphicsComputeEffects", "Compute effects", 4, { smart = true, visual = 2, names = LOW_ULTRA }),
 	level("graphicsOutlineMode", "Outline mode", 2, { names = { [0] = "Off", "Good", "High" } }),
-	level("graphicsTextureResolution", "Texture resolution", 2, { heavy = true, names = LOW_HIGH }),
+	level("graphicsTextureResolution", "Texture resolution", 2, { heavy = true, names = { [0] = "Low", "Fair", "High" } }),
 	level("graphicsSpellDensity", "Spell density", 2, { smart = true, names = { [0] = "Essential", "Some", "Everything" } }),
 	level("graphicsProjectedTextures", "Projected textures", 1, { names = { [0] = "Disabled", "Enabled" } }),
-	level("graphicsLightMode", "Lighting quality", 3, { smart = true, visual = 3, names = { [0] = "Low", "Good", "High", "Ultra" } }),
+	level("graphicsLightMode", "Lighting quality", 3, { smart = true, visual = 3, names = { [0] = "Fair", "Good", "High", "Ultra" } }),
 	level("graphicsViewDistance", "View distance", 9, { smart = true, visual = 4 }),
 	level("graphicsEnvironmentDetail", "Environment detail", 9, { smart = true, visual = 3 }),
 	level("graphicsGroundClutter", "Ground clutter", 9, { smart = true, visual = 2 }),
-	{ cvar = RENDER_SCALE, group = "render", label = "Render scale", kind = "scale", min = 0.33, max = 2.0, step = 0.05, smart = true, visual = 4 },
+	{ cvar = RENDER_SCALE, group = "render", label = "Render scale", kind = "scale", min = 0.33, max = 2.0, lo = 0.33, hi = 2.0, step = 0.05, smart = true, visual = 4 },
 	{ cvar = "ResampleQuality", group = "render", label = "Resample quality", kind = "level", min = 0, max = 3, step = 1, smart = true, visual = 2, names = { [0] = "Point", "Bilinear", "Bicubic", "FidelityFX" } },
-	{ cvar = AA, group = "render", label = "Anti-aliasing", kind = "choice", visual = 2, names = { [0] = "None", "FXAA Low", "FXAA High", "CMAA", "CMAA 2" } },
+	{ cvar = AA, group = "render", label = "Anti-aliasing", kind = "choice", lo = 0, hi = 4, step = 1, visual = 2, names = { [0] = "None", "FXAA Low", "FXAA High", "CMAA", "CMAA 2" } },
 	{ cvar = "textureFilteringMode", group = "render", label = "Texture filtering", kind = "level", min = 0, max = 5, step = 1, heavy = true, visual = 1, names = { [0] = "Bilinear", "Trilinear", "2x Anisotropic", "4x Anisotropic", "8x Anisotropic", "16x Anisotropic" } },
 	hidden("shadowSoft", "Soft shadows", 0, 1, 1, { smart = true, visual = 2, names = OFF_ON }),
 	hidden("groundEffectDensity", "Grass density", 16, 256, 16, { smart = true, visual = 2 }),
@@ -141,6 +141,13 @@ do
 	if high and high < entry.max and high > entry.min then entry.max = high end
 end
 
+-- With secondary lighting the game's particle menu is Low..Ultra on 0..4; without it 0 is Disabled and 1..5 the levels.
+do
+	local ok, secondary = pcall(function() return C_VideoOptions.IsSecondaryLightingSupported() end)
+	local entry = byLower[PARTICLES:lower()]
+	if ok and ns.plain(secondary) == true then entry.min, entry.max, entry.names = 0, 4, LOW_ULTRA end
+end
+
 -- Only the modes this graphics card offers, as the game's own menu does; FXAA unless the client says no.
 do
 	local entry = byLower[AA:lower()]
@@ -178,7 +185,6 @@ local function nearestChoice(choices, value)
 	return best
 end
 
--- On the step grid (counted from 0), inside the range; NaN and non-numbers give nil.
 -- What this machine's client clamped a write to (Apply.Write records it): a cap on one side of the range.
 local function capped(cvar, value)
 	local db = ns.db
@@ -188,6 +194,14 @@ local function capped(cvar, value)
 	return value > limit and limit or value
 end
 
+local function grid(entry, value, min, max)
+	local step = entry.step
+	local snapped = math.floor(value / step + 0.5) * step
+	if snapped < min - EPSILON then snapped = math.ceil(min / step - EPSILON) * step end
+	if snapped > max + EPSILON then snapped = math.floor(max / step + EPSILON) * step end
+	return snapped
+end
+
 -- On the step grid (counted from 0), inside the range and this machine's limit; NaN and non-numbers give nil.
 function Catalog.Clamp(cvar, value)
 	local entry = Catalog.Get(cvar)
@@ -195,11 +209,17 @@ function Catalog.Clamp(cvar, value)
 	if not (entry and value and value == value) then return nil end
 	if entry.kind == "choice" then return capped(entry.cvar, nearestChoice(entry.choices, value)) end
 
-	local step, min, max = entry.step, entry.min, entry.max
-	local snapped = math.floor(value / step + 0.5) * step
-	if snapped < min - EPSILON then snapped = math.ceil(min / step - EPSILON) * step end
-	if snapped > max + EPSILON then snapped = math.floor(max / step + EPSILON) * step end
-	return tidy(capped(entry.cvar, snapped))
+	return tidy(capped(entry.cvar, grid(entry, value, entry.min, entry.max)))
+end
+
+-- Saved data keeps to the static range (lo..hi where this machine narrows the range at load); Clamp at use applies
+-- this machine's range and limits.
+function Catalog.Repair(cvar, value)
+	local entry = Catalog.Get(cvar)
+	value = tonumber(value)
+	if not (entry and value and value == value) then return nil end
+	if entry.kind == "choice" and not entry.lo then return nearestChoice(entry.choices, value) end
+	return tidy(grid(entry, value, entry.lo or entry.min, entry.hi or entry.max))
 end
 
 -- The client snaps values to its own grid (RenderScale 0.75 can read back 0.7533): within half a step, or the same
@@ -240,8 +260,9 @@ function Catalog.Format(cvar, value)
 	return name or tostring(tidy(number))
 end
 
-local QUALITY_LEVELS = { low = 2, fair = 4, good = 6, high = 8, ultra = 10 }
-local QUALITY_TOP = 10
+-- The game's quality slider passes 0..9 (its label shows value + 1).
+local QUALITY_LEVELS = { low = 1, fair = 3, good = 5, high = 7, ultra = 9 }
+local QUALITY_TOP = 9
 -- Beyond the menu's Ultra: hidden engine values from our own measurements.
 local BEYOND = {
 	groundEffectDensity = 256, groundEffectDist = 400, groundEffectFade = 300, lodObjectCullSize = 8, lodObjectFadeScale = 200, terrainLodDist = 1000,
@@ -292,11 +313,7 @@ Catalog.PRESETS = {
 	{ key = "fps", name = "Max FPS", build = function() return with(quality(QUALITY_LEVELS.low), MAX_FPS) end },
 }
 
--- Old key, kept so a saved or scripted "fidelity" still works.
-local ALIASES = { fidelity = "beyond" }
-
 function Catalog.Preset(key)
-	key = ALIASES[key] or key
 	for _, preset in ipairs(Catalog.PRESETS) do
 		if preset.key == key then return preset end
 	end
@@ -343,11 +360,8 @@ function Catalog.Impact(cvar)
 
 	local probe = entry.impactSource == "probe" and Catalog.PRIOR[entry.cvar] or nil
 	local smart = ns.db and ns.db.smart
-	local sum, n = 0, 0
-	for _, learned in pairs(smart and smart.learned or {}) do
-		if type(learned) == "table" and type(learned.gains) == "table" then sum, n = addGain(entry, learned.gains[entry.cvar], sum, n) end
-	end
-	if n == 0 and smart and type(smart.gains) == "table" then sum, n = addGain(entry, smart.gains[entry.cvar], sum, n) end
+	local gains = smart and type(smart.gains) == "table" and smart.gains or {}
+	local sum, n = addGain(entry, gains[entry.cvar], 0, 0)
 	if n < MEASURED_N then return entry.impact, probe, entry.impactSource end
 
 	local prior = probe or MIDPOINT[entry.impact] / span(entry)

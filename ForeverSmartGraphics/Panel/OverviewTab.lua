@@ -137,8 +137,8 @@ local function calibrationText(state)
 	local lines = { string.format(L.CAL_TITLE, state.target or ns.db.smart.target) }
 	if state.hint then lines[#lines + 1] = state.hint end
 	for _, scene in ipairs(state.scenes or {}) do
-		local status = scene.done and "+" or (state.current and state.current.locKey == scene.locKey) and "..." or "-"
-		lines[#lines + 1] = status .. " " .. (scene.label or scene.locKey or "")
+		local status = scene.done and L.CAL_DONE or (state.current and state.current.locKey == scene.locKey) and L.CAL_NOW or L.CAL_WAITING
+		lines[#lines + 1] = string.format(L.CAL_SCENE, scene.label or scene.locKey or "", status)
 	end
 	local change = UI.ChangeText((state.changes or {})[1])
 	if change then lines[#lines + 1] = string.format(L.CAL_LAST, change) end
@@ -149,7 +149,7 @@ local function notice()
 	local state = calibrating()
 	if state then
 		return calibrationText(state), {
-			{ L.FINISH, function() UI.FinishCalibration() end, state.ready == true },
+			{ L.FINISH, function() UI.FinishCalibration() end, UI.CanFinishCalibration and UI.CanFinishCalibration(state) or false },
 			{ L.STOP, function()
 				ns.Calibrate.Stop()
 				refresh()
@@ -168,13 +168,13 @@ local function notice()
 		return string.format(L.WHY_HELD, profile and profile.name or held), { { L.HOLD_RELEASE, function()
 			ns.Profiles.Hold(nil)
 			refresh()
-		end } }
+		end } }, "held"
 	end
 	local pending = ns.Apply.Pending and ns.Apply.Pending()
 	if pending then
 		local text = string.format(pending.waitingCombat and L.BANNER_PENDING_COMBAT or L.BANNER_PENDING, pendingNames(pending.values))
 		return text, { { L.APPLY_NOW, function()
-			ns.Apply.ApplyPending("user", { user = true })
+			ns.Apply.ApplyPending()
 			refresh()
 		end } }
 	end
@@ -247,10 +247,12 @@ local function build(content, win)
 	page.setUp.buttons[1].action = function() UI.OpenPanel("locations") end
 end
 
-local function whyText()
+local function whyText(mode)
 	local loc = here()
 	local why = UI.WhyLine(true)
 	if not ns.db.options.switching then return why end
+	-- The banner says why a held profile is in use.
+	if mode == "held" then return string.format(L.WHY_HERE, gold(loc.name or L.UNKNOWN_PLACE)) end
 	local tail = (ns.Smart and ns.Smart.Enabled()) and string.format(L.WHY_SMART, gold(UI.Goal())) or L.WHY_EXACT
 	return string.format(L.WHY_HERE, gold(loc.name or L.UNKNOWN_PLACE)) .. " " .. why:gsub("%.$", "") .. ", " .. tail
 end
@@ -294,10 +296,10 @@ local function refreshPage(content)
 	local loc, own = here()
 	local id = hereProfile()
 	flow:Start()
-	content.why:SetText(whyText())
+	local text, buttons, mode = notice()
+	content.why:SetText(whyText(mode))
 	flow:Add(content.why, content.why:GetStringHeight(), N.ROW_GAP, N.TITLE_X)
 
-	local text, buttons, mode = notice()
 	if text then
 		local height = content.banner:Set(text, buttons)
 		flow:Add(content.banner, height)
@@ -306,6 +308,8 @@ local function refreshPage(content)
 		end
 	end
 	local busy, off = mode == "calibrating", mode == "off"
+	-- A held profile is used everywhere, so the one for this place and its preset are not what is in use.
+	local fixed = busy or off or mode == "held"
 
 	flow:Add(content.lookSection, N.SECTION_H, 0)
 	local profileRow = content.profile
@@ -315,10 +319,10 @@ local function refreshPage(content)
 	local ids = profileIds()
 	local at = indexOf(ids, id)
 	profileRow.choice:Set(nameOf(id), at == 1, at == #ids)
-	UI.SetRowEnabled(profileRow, not (busy or off))
-	profileRow.buttons[1]:SetEnabled(not (busy or off))
+	UI.SetRowEnabled(profileRow, not fixed)
+	profileRow.buttons[1]:SetEnabled(not fixed)
 	flow:Add(profileRow, N.ROW_H)
-	if not (busy or off) then
+	if not fixed then
 		local tip = own and string.format(L.PROFILE_FOR_PLACE_TIP, forName) or string.format(L.PROFILE_FOR_TYPE_TIP, typeLabel:lower())
 		nodes[#nodes + 1] = rowNode(profileRow, openHereProfile, { title = profileRow.label:GetText(), lines = { tip, UI.ByMode(L.CHOICE_TIP, L.CHOICE_TIP_MOUSE) }, side = "above" }, { noSide = false, onDir = stepHereProfile })
 		nodes[#nodes + 1] = buttonNode(profileRow.buttons[1], { title = L.EDIT, lines = { string.format(L.EDIT_TIP, nameOf(id)) }, side = "right" })
@@ -327,9 +331,9 @@ local function refreshPage(content)
 	local presetRow = content.preset
 	local first, last = UI.PresetEnds(id)
 	presetRow.choice:Set(UI.PresetName(UI.PresetOf(id)), first, last)
-	UI.SetRowEnabled(presetRow, not (busy or off))
+	UI.SetRowEnabled(presetRow, not fixed)
 	flow:Add(presetRow, N.ROW_H)
-	if not (busy or off) then
+	if not fixed then
 		local lines = { string.format(L.PRESET_TIP, nameOf(id)), L.PRESET_TIP_STEP, L.PRESET_TIP_CUSTOM }
 		if ns.Smart and ns.Smart.Enabled() then lines[#lines + 1] = L.PRESET_TIP_SMART end
 		nodes[#nodes + 1] = rowNode(presetRow, openPreset, { title = L.QUALITY_PRESET, lines = lines, side = "above" }, { noSide = true, onDir = function(dir) return UI.StepPreset(window, id, dir) end })
@@ -356,6 +360,7 @@ local function refreshPage(content)
 	end
 	if content.calibrate then
 		UI.SetRowEnabled(content.calibrate, not (busy or off))
+		content.calibrate.button:SetEnabled(not (busy or off))
 		flow:Add(content.calibrate, N.ROW_H)
 		if not (busy or off) then nodes[#nodes + 1] = buttonNode(content.calibrate.button, { title = L.CALIBRATE, lines = { L.CALIBRATE_LINE, L.CALIBRATE_TIP_CLOSES }, side = "right" }) end
 	end

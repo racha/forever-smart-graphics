@@ -12,6 +12,7 @@ local REPEAT_DELAY, REPEAT_EVERY = 0.38, 0.11
 local TICK_EVERY = 1
 local TAB_KEYS = { PADLSHOULDER = -1, PADRSHOULDER = 1 }
 local CLOSE_KEYS = { PADFORWARD = true, PADSOCIAL = true }
+local RESUME_FOR = 15
 
 local current
 local Window = {}
@@ -53,7 +54,9 @@ function Window:Focus(node)
 		self.wash:SetPoint("TOPLEFT", region, "TOPLEFT", -10, 0)
 		self.wash:SetPoint("BOTTOMRIGHT", region, "BOTTOMRIGHT", 5, 0)
 	end
-	UI.HideTooltip()
+	-- A redraw keeps a tooltip whose owner is still under the pointer (the strip's segments are not nodes).
+	local owner = UI.TooltipOwner()
+	if not (owner and owner:IsMouseOver()) then UI.HideTooltip() end
 	if UI.DialogShown() or self.modal then return end
 	if node and node.tip then UI.Tooltip(node.tipRegion or region, type(node.tip) == "function" and node.tip() or node.tip) end
 	self.cursor:Attach(node and (node.cursorRegion or region), node and node.cursorX)
@@ -91,14 +94,19 @@ function Window:Move(dx, dy, repeats)
 	if best then return self:Focus(best) end
 end
 
+-- A greyed row (UI.SetRowEnabled) and the buttons on it are dead to A as they are to a click.
 function Window:Select()
 	local node = self.focus
-	if node and node.select then node.select() end
+	local region = node and node.region
+	if not (region and node.select) or region.disabled or (region:GetParent() or {}).disabled then return end
+	node.select()
 end
 
 -- An open modal (a list, the name box) owns the input; the window redraws when it closes.
 function Window:Refresh()
 	if self.modal then return end
+	-- A redraw may build frames: the overlays' level is measured again (UI.RaiseAbove).
+	self.treeTop = nil
 	if self.OnRefresh then self:OnRefresh() end
 end
 
@@ -140,6 +148,7 @@ end
 local function onPadDown(self, key)
 	if InCombatLockdown() then return end
 	UI.NoteInput("pad")
+	self.byHover = false
 	self:SetPropagateKeyboardInput(false)
 	-- A window opened in the mouse look has no focus: the first pad press puts it on the first element (a direction
 	-- stops there; A presses it). B with nothing focused closes, as it does from the page list.
@@ -158,23 +167,33 @@ end
 -- the name box has focus its EditBox takes the keys first.
 local KEY_AS_PAD = { UP = "PADDUP", DOWN = "PADDDOWN", LEFT = "PADDLEFT", RIGHT = "PADDRIGHT", ENTER = "PAD1", SPACE = "PAD1" }
 
+local ACTIVATE = { ENTER = true, SPACE = true }
+
+-- A hover is the mouse's focus: with no box open, Enter, Space and the arrows under it stay the game's (Space jumps,
+-- arrows walk). Only Enter confirms a dialog.
 local function onKeyDown(self, key)
 	if InCombatLockdown() then return end
-	local pad = KEY_AS_PAD[key]
+	local pad, dialog, modal = KEY_AS_PAD[key], UI.DialogShown(), self.modal
+	local hover = not self.focus or self.byHover
+	if ACTIVATE[key] and not (dialog and key == "ENTER" or not dialog and (modal or not hover)) then pad = nil end
+	if pad and not ACTIVATE[key] and self.focus and self.byHover and not (dialog or modal) then pad = nil end
 	local nav = pad or key == "ESCAPE"
 	self:SetPropagateKeyboardInput(not nav)
-	if nav then UI.NoteInput("mouse") end
-	if pad then
-		self:Pad(pad)
-		self.repeatKey, self.repeatDir = nil, nil
-		return
-	end
 	if not nav then return end
 
-	if self.modal then return self.modal:OnPad("PAD2") end
-	if UI.DialogShown() then return UI.Dialog():OnPad("PAD2") end
+	UI.NoteInput("mouse")
+	-- A held arrow repeats until its key comes up (onKeyUp).
+	if pad then return self:Pad(pad) end
+	if modal then return modal:OnPad("PAD2") end
+	if dialog then return UI.Dialog():OnPad("PAD2") end
+	-- With the mouse, Escape closes at once; a page's own step back (the editor to its list) still comes first.
+	if hover and not UI.Pad() then self:Focus(nil) end
 	if self.OnBack then return self:OnBack() end
 	UI.CloseAll()
+end
+
+local function onKeyUp(self, key)
+	if KEY_AS_PAD[key] == self.repeatKey then self.repeatKey, self.repeatDir = nil, nil end
 end
 
 local function onUpdate(self, elapsed)
@@ -193,6 +212,8 @@ local function onUpdate(self, elapsed)
 end
 
 local function onShow(self)
+	self:Raise()
+	self.treeTop = nil
 	UI.MarkCursor()
 	self.glow:Show()
 end
@@ -200,11 +221,12 @@ end
 local function onHide(self)
 	if self.closing then return end
 	self.glow:Hide()
-	UI.HideTooltip()
 	self.repeatKey, self.repeatDir = nil, nil
 	if self.modal then self.modal:OnPad("PAD2") end
 	if UI.DialogShown() and UI.Dialog().owner == self then UI.Dialog():Close() end
 	if self.OnClosed then self:OnClosed() end
+	-- Closing a modal redraws the window, which can show a tooltip again.
+	UI.HideTooltip()
 	if current == self then current = nil end
 	if not current then UI.SetOpen(false) end
 	-- Hidden with UIParent (Alt+Z, a cinematic): the window is still shown and would take pad input when UIParent
@@ -217,6 +239,7 @@ local function onHide(self)
 end
 
 local BODY_ATLAS, BODY_ALPHA, BODY_GREY = "bank-frame-background", 0.5, 0.6
+local DRAG_H, DRAG_RIGHT = 24, -28
 
 -- A w x h window, centred on screen. native = the Settings panel's body: its flat background plus Options_InnerFrame at
 -- 17, -64 (Blizzard_SettingsPanel.xml); otherwise the Bank frame's background.
@@ -224,8 +247,21 @@ function UI.NewWindow(w, h, native)
 	local window = Mixin(CreateFrame("Frame", nil, UIParent, "ForeverSmartGraphicsWindowTemplate"), Window)
 	window:SetSize(w, h)
 	window:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-	-- Above the Settings panel (HIGH) and the game menu (DIALOG), which may stay open under our window.
-	window:SetFrameStrata("FULLSCREEN_DIALOG")
+	-- Above the Settings panel (HIGH); raised over the game menu on show (onShow). DIALOG, not higher: queue popups,
+	-- ready checks and invites shown later come above it.
+	window:SetFrameStrata("DIALOG")
+	-- The title bar drags the window for the session; the next login centres it again (the frame has no name, so the
+	-- game keeps no layout for it). The template clamps it to the screen.
+	window:SetMovable(true)
+	local drag = CreateFrame("Frame", nil, window)
+	drag:SetPoint("TOPLEFT")
+	drag:SetPoint("TOPRIGHT", DRAG_RIGHT, 0)
+	drag:SetHeight(DRAG_H)
+	drag:EnableMouse(true)
+	drag:RegisterForDrag("LeftButton")
+	drag:SetScript("OnDragStart", function() window:StartMoving() end)
+	drag:SetScript("OnDragStop", function() window:StopMovingOrSizing() end)
+	window.drag = drag
 	window.ClosePanelButton:SetScript("OnClick", function() UI.CloseAll() end)
 	-- The flat background's colour is translucent; a black underlay makes the window opaque over the world.
 	local underlay = (window.Bg or window):CreateTexture(nil, "BACKGROUND", nil, -8)
@@ -251,6 +287,7 @@ function UI.NewWindow(w, h, native)
 	window:SetScript("OnGamePadButtonDown", onPadDown)
 	window:SetScript("OnGamePadButtonUp", onPadUp)
 	window:SetScript("OnKeyDown", onKeyDown)
+	window:SetScript("OnKeyUp", onKeyUp)
 	window:SetScript("OnUpdate", onUpdate)
 	window:SetScript("OnShow", onShow)
 	window:SetScript("OnHide", onHide)
@@ -368,7 +405,7 @@ end
 
 -- Combat closes every window of ours, list and dialog in the same handler: Core fires FSG_COMBAT_START synchronously
 -- first thing in PLAYER_REGEN_DISABLED, before lockdown. A window that wants to be offered again after combat sets
--- resume = { text, fn } and gets it in UI.resume.
+-- resume = { text, fn }; it comes back as a notice with one button.
 local function combatClose()
 	if not current then return end
 	UI.resume = current.resume
@@ -381,7 +418,12 @@ ns.On("FSG_COMBAT_END", function()
 	if not resume then return end
 	UI.resume = nil
 	C_Timer.After(0.5, function()
-		if not InCombatLockdown() and not current then UI.OfferResume(resume) end
+		if InCombatLockdown() or current then return end
+		-- A notice, not a window: it takes no keys, so the game's own keys work the moment combat ends.
+		UI.Notify.Show("resume", { text = resume.text, buttons = { { L.RESUME, function()
+			UI.Notify.Hide("resume")
+			resume.fn()
+		end } }, hideAt = GetTime() + RESUME_FOR })
 	end)
 end)
 

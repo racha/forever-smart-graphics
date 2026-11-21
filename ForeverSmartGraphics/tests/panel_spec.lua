@@ -336,7 +336,7 @@ check(strip.here.value:GetText() == "Stormwind Keep · City" and strip.profile.v
 check(strip.fps:GetText() == "60 fps" and strip.target:GetText() == "target 60" and strip.fps.textColor[2] == 1 and strip.fps.textColor[1] < 0.5, "FPS green at the goal, its target")
 check(math.abs(strip.fill.w - 96 * 60 / 90) < 1e-6, "the meter fills fps / (goal x 1.5)")
 strip.here:Fire("OnEnter")
-check(UI.TooltipOwner() == strip.here and tipLineOf("Stormwind Keep is a city zone."), "Here tooltip")
+check(UI.TooltipOwner() == strip.here and tipLineOf("Stormwind Keep counts as city."), "Here tooltip")
 strip.here:Fire("OnLeave")
 strip.profile:Fire("OnEnter")
 check(tipLineOf("City zones use the profile City."), "Profile tooltip: the why line")
@@ -425,7 +425,7 @@ ForeverSmartGraphicsDialog.Button1:Click()
 check(last(ns, "CalStart")[2] == 65 and UI.Current() == nil, "then calibrates at the target and closes the window")
 UI.OpenPanel("overview")
 local banner = page.banner
-check(banner:IsShown() and banner.text:GetText():find("Finding your best settings · 65 FPS", 1, true) and banner.buttons[1]:GetText() == L.FINISH and not banner.buttons[1]:IsEnabled(), "calibration card, Finish waits for ready")
+check(banner:IsShown() and banner.text:GetText():find("Finding your best settings · 65 fps", 1, true) and banner.buttons[1]:GetText() == L.FINISH and not banner.buttons[1]:IsEnabled(), "calibration card, Finish waits for ready")
 check(labelled("Profile for City") == nil and labelled(L.SMART) == nil and labelled(L.SMART) == nil, "what it would fight with is greyed")
 check(page.smart.hint:GetText() == L.SMART_PAUSED and strip.smart.value:GetText() == L.STRIP_CALIBRATING, "Paused, and the strip says so")
 ns.cal.ready = true
@@ -592,7 +592,7 @@ local switch = labelled(L.SWITCHING)
 check(switch.region.hint:GetText() == L.SWITCHING_HINT, "Switch by location with its hint")
 local city = labelled("City")
 check(city.region.here:IsShown() and city.region.choice.text:GetText() == "Raid night" and city.region.choice.x == 192 and city.region.second.x == 410 and city.region.second.w == 168 + 44, "City row: you are here, Profile at 192, Smart goal at 410, 168 wide")
-check(city.region.second.text:GetText() == "Default: FPS" and city.region.second.off, "the goal shows its value, greyed while Smart is off")
+check(city.region.second.text:GetText() == "Same as Smart mode" and city.region.second.off, "the goal shows its value, greyed while Smart is off")
 local locPage = city.region:GetParent()
 check(locPage.placeCaption:IsShown() and locPage.placeCaption.flowY > locPage.placesWin.flowY, "the places' Profile header sits over their rows, under the line that explains them")
 local savedOverrides = ns.db.overrides
@@ -611,7 +611,7 @@ local style = nodeWhere(function(n) return n.styleKey == "city" end)
 check(style and not labelled("City").region.second.off, "the goal column comes on with Smart")
 check(main.list and labelled("City").region:GetParent().styleCaption:GetText() == L.COLUMN_STYLE, "column caption Smart goal")
 style.region:Click()
-check(listRows()[1].name:GetText() == "Default: FPS" and listRows()[4].name:GetText() == "Fidelity" and listRows()[5]:IsShown() == false, "Default, then the three goals")
+check(listRows()[1].name:GetText() == "Same as Smart mode" and listRows()[4].name:GetText() == "Fidelity" and listRows()[5]:IsShown() == false, "Default, then the three goals")
 listRows()[4]:Click()
 check(last(ns, "SetLocationGoal")[2] == "city" and last(ns, "SetLocationGoal")[3] == "fidelity", "a goal per location type")
 nodeWhere(function(n) return n.styleKey == "city" end).region:Click()
@@ -646,13 +646,17 @@ check(labelled(L.START) == nil and buttonNode(L.START) == nil, "Find my best set
 local smartPage = labelled(L.SMART).region:GetParent()
 check(smartPage.intro:GetText() == L.SMART_INTRO and smartPage.offLine:IsShown(), "intro, and the off line while Smart is off")
 labelled(L.SMART).region:Click()
-check(last(ns, "SetEnabled")[2] == true and smartPage.lines[1]:GetText():find("Holding · 58 fps, goal", 1, true), "right now: " .. smartPage.lines[1]:GetText())
+check(last(ns, "SetEnabled")[2] == true and smartPage.lines[1]:GetText():find("Holding · 58 fps, target", 1, true), "right now: " .. smartPage.lines[1]:GetText())
 check(smartPage.lines[3]:GetText() == "Last change: Render scale 75% to 70%", "last change")
 check(smartPage.goal.desc:GetText() == "Holds the target first." and smartPage.pace.desc:GetText() == "Changes only when you enter a new area.", "goal and pace with their lines")
 check(smartPage.lines[1]:GetText():find("FPS · Smooth", 1, true), "right now names the goal and pace")
 ns.smartState = { status = "holding", fps = 74, target = 75, goal = 72, ceiling = 74 }
 W.advance(1.1)
-check(smartPage.lines[1]:GetText():find("Holding · 74 fps, goal 72 (display tops out at 74)", 1, true), "Smart's goal, with the display's ceiling: " .. smartPage.lines[1]:GetText())
+check(not smartPage.lines[1]:GetText():find("tops out", 1, true), "a ceiling Smart has not proved is not called the display's limit")
+ns.Smart.Limit = function() return 74 end
+W.advance(1.1)
+check(smartPage.lines[1]:GetText():find("Holding · 74 fps, target 72 (display tops out at 74)", 1, true), "Smart's goal, with the display's ceiling: " .. smartPage.lines[1]:GetText())
+ns.Smart.Limit = nil
 ns.smartState = nil
 W.advance(1.1)
 check(not smartPage.lines[1]:GetText():find("tops out", 1, true), "no ceiling known: no aside")
@@ -664,8 +668,8 @@ W.press(main, "PADDLEFT")
 check(math.abs(last(ns, "SetFloor")[2] - 0.55) < 1e-9, "floor steps by 5%")
 
 -- Render scale maximum: under the minimum, 100% up to this machine's highest render scale, only when that is above 100%.
-check(L.FLOOR == "Render scale minimum" and L.SCALE_MAX == "Render scale maximum" and L.SMART_TIP:find("down to its minimum", 1, true) and L.ABOUT_TEXT:find("/fsg floor <percent> · /fsg maxscale <percent>", 1, true), "minimum / maximum labels, the maxscale command")
-for key, text in pairs(L) do check(type(text) ~= "string" or key == "ABOUT_TEXT" or not text:lower():find("floor", 1, true), key .. " no longer says floor") end
+check(L.FLOOR == "Render scale minimum" and L.SCALE_MAX == "Render scale maximum", "minimum / maximum labels")
+for key, text in pairs(L) do check(type(text) ~= "string" or not text:lower():find("floor", 1, true), key .. " no longer says floor") end
 local renderScale = ns.Catalog.Get("RenderScale")
 local function scaleMaxNode() return labelled(L.SCALE_MAX) end
 local function nodeIndex(node) for i, n in ipairs(main.nodes) do if n == node then return i end end end
@@ -727,7 +731,7 @@ renderScale.max = 1
 open("smart")
 checkLocked("back to a 100% machine with 150% stored")
 local learnedFold = nodeWhere(function(n) return n.foldKey == "learned" end)
-check(learnedFold and learnedFold.region.count:GetText() == "1 locations" and labelled("City") == nil, "What it learned starts folded")
+check(learnedFold and learnedFold.region.count:GetText() == "1 location" and labelled("City") == nil, "What it learned starts folded")
 learnedFold.region:Click()
 local learnedRow = labelled("City")
 check(learnedRow.region.buttons[1]:GetText() == L.SAVE_PROFILE and learnedRow.region.detail:GetText():find("^1 zone "), "learned row: zones, Save as profile, Reset")
@@ -757,7 +761,7 @@ local order = table.concat(noticeRows, "|")
 check(order:find(table.concat({ L.SMART_NOTICE, L.PROFILE_NOTICE, L.SUGGEST, L.ANNOUNCE, L.CHAT_LOG, L.CHAT_LOG_SMART, L.FPS_PULSE }, "|"), 1, true), "Notifications: the six notices, then the FPS pulse, in order: " .. order)
 check(L.SECTION_NOTICES == "Notifications" and L.ANNOUNCE == "Announce texture changes before they stutter", "the section and its rows say what they show")
 local noticeDesc = labelled(L.SMART_NOTICE).region:GetParent().sections[1].desc
-check(noticeDesc and noticeDesc:GetText() == "All off by default. Turn on what you want to see.", "All off by default, under the header")
+check(noticeDesc and noticeDesc:GetText() == "Off by default, except the minimap pulse.", "All off by default, under the header")
 for _, label in ipairs({ L.SMART_NOTICE, L.PROFILE_NOTICE, L.SUGGEST, L.ANNOUNCE, L.CHAT_LOG_SMART }) do check(not labelled(label).region.control.check:IsShown(), label .. ": off by default") end
 check(labelled(L.FPS_PULSE).region.control.check:IsShown(), "the FPS pulse: on by default")
 labelled(L.MINIMAP).region:Click()
@@ -803,6 +807,192 @@ UI.OpenPanel("profile", "p1")
 for _, node in ipairs(main.nodes) do check(node.region:IsMouseEnabled(), "editor: node takes the mouse") end
 ns.db.smart.enabled = false
 UI.CloseAll()
+
+-- Shared controls and the window's keys (the 1.0 fix round).
+local restoreCalls = function() local n = 0 for _, c in ipairs(ns.calls) do if c[1] == "RestoreOriginal" then n = n + 1 end end return n end
+ns.db.options.input = "auto"
+ns.TogglePanel()
+open("general")
+check(main.strata == "DIALOG" and main.drag and main.drag.scripts.OnDragStart and main.drag.scripts.OnDragStop, "the window is DIALOG strata, its title bar drags it")
+-- W4: a hover leaves Enter, Space and the arrows to the game; a keyboard focus takes them; only Enter confirms.
+local restoreNode = buttonNode(L.RESTORE)
+restoreNode.region:Hover()
+check(main.focus == restoreNode and main.byHover, "hover focuses Restore")
+for _, key in ipairs({ "SPACE", "ENTER", "UP", "LEFT" }) do
+	W.key(main, key)
+	check(main.propagate == true and not UI.DialogShown() and main.focus == restoreNode, key .. " under a hover goes to the game")
+end
+restoreNode.region:Leave()
+check(main.focus == nil, "leaving drops the focus")
+W.key(main, "ENTER")
+check(main.propagate == true and not UI.DialogShown(), "Enter with nothing focused goes to the game")
+W.key(main, "DOWN")
+check(main.propagate == false and main.focus ~= nil and not main.byHover, "an arrow with nothing focused starts the keyboard focus")
+main:Focus(restoreNode)
+W.key(main, "SPACE")
+check(main.propagate == false and UI.DialogShown(), "Space presses a keyboard focus")
+local restored = restoreCalls()
+W.key(main, "SPACE")
+check(UI.DialogShown() and restoreCalls() == restored and main.propagate == true, "Space does not confirm a dialog")
+W.key(main, "ENTER")
+check(not UI.DialogShown() and restoreCalls() == restored + 1, "Enter confirms it")
+-- A held arrow repeats until its key comes up.
+main:Focus(main.nodes[1])
+main:Fire("OnKeyDown", "DOWN")
+local first = main.focus
+W.advance(0.8)
+check(main.repeatDir and main.focus ~= first, "a held Down repeats")
+main:Fire("OnKeyUp", "DOWN")
+check(main.repeatDir == nil, "and stops when it comes up")
+-- W20: Escape with the mouse closes at once; the editor still steps back to its list first.
+buttonNode(L.RESTORE).region:Hover()
+W.key(main, "ESCAPE")
+check(not main:IsShown(), "mouse Escape on a page closes at once")
+UI.OpenPanel("profile", "p1")
+main.nodes[2].region:Hover()
+W.key(main, "ESCAPE")
+check(main:IsShown() and UI.Selection().key == "profiles", "mouse Escape in the editor goes back to the list")
+main.nodes[1].region:Hover()
+W.key(main, "ESCAPE")
+check(not main:IsShown(), "and the next one closes")
+ns.TogglePanel()
+open("general")
+
+-- W5: a slider takes no mouse wheel, so the wheel scrolls the page.
+local probe = UI.SettingRow(main.canvas, "Probe")
+local slider = UI.RowSlider(probe, 0, 10, 1, function() end, function() end)
+check(slider.scripts.OnMouseWheel == nil and not slider.mouseWheel, "a slider takes no mouse wheel")
+
+-- W7: a greyed row is dead to a click and to A; every control on it greys, the first one missing or not.
+local hits = 0
+local dead = UI.SettingRow(main.canvas, "Dead")
+dead.onClick, dead.onRightClick = function() hits = hits + 1 end, function() hits = hits + 1 end
+UI.RowCheckbox(dead, function() hits = hits + 1 end)
+dead.second, dead.button = CreateFrame("Button", nil, dead), UI.SmallButton(dead, "Go")
+UI.SetRowEnabled(dead, false)
+dead:Click()
+dead:Click("RightButton")
+check(hits == 0, "a greyed row ignores left and right clicks")
+check(not dead.control:IsEnabled() and not dead.second:IsEnabled() and not dead.button:IsEnabled(), "a greyed row greys its checkbox, second control and button")
+local partial = UI.SettingRow(main.canvas, "Partial")
+partial.button = UI.SmallButton(partial, "Go")
+UI.SetRowEnabled(partial, false)
+check(not partial.button:IsEnabled(), "a missing first control does not stop the greying")
+main:Focus(UI.Node(main, dead, function() hits = hits + 1 end))
+W.press(main, "PAD1")
+main:Focus(UI.Node(main, dead.button, function() hits = hits + 1 end))
+W.press(main, "PAD1")
+check(hits == 0, "A on a greyed row or its button does nothing")
+UI.SetRowEnabled(dead, true)
+main:Focus(UI.Node(main, dead, function() hits = hits + 1 end))
+W.press(main, "PAD1")
+check(hits == 1, "enabled again, A acts")
+ns.db.options.input = "auto"
+UI.NoteInput("mouse")
+
+-- W24b: enabled again, a dropdown's arrow at an end stays greyed.
+local drop = UI.Choice(main.canvas, 100, function() end, function() end)
+drop:Set("First", true, false)
+drop:SetEnabledState(false)
+drop:SetEnabledState(true)
+check(not drop.steppers[-1]:IsEnabled() and drop.steppers[1]:IsEnabled() and drop.steppers[-1].icon.atlas == "common-dropdown-icon-back-disabled", "the back arrow stays greyed at the first value")
+
+-- W27b: a dropdown's list is as wide as its longest entry, at least its button, at most the window.
+local function listWidth(names)
+	local entries = {}
+	for i, name in ipairs(names) do entries[i] = { id = i, name = name } end
+	UI.OpenChoice(main, drop, entries, 1, function() end)
+	local width = UI.List.Frame().w
+	UI.List.Close()
+	return width
+end
+check(listWidth({ "A", "B" }) == drop.button:GetWidth(), "short entries: the button's width")
+check(listWidth({ "A", string.rep("W", 40) }) == 40 * 6.5 + 60, "a long entry widens the list")
+check(listWidth({ string.rep("W", 400) }) == main:GetWidth(), "never wider than the window")
+
+-- W16: the name box shades the window; no list or dialog opens over it.
+main:Focus(buttonNode(L.RESTORE))
+UI.Name.Open({ window = main, cell = buttonNode(L.RESTORE).region, title = "Name", text = "x", onOK = function() end })
+local shade
+for _, f in ipairs(W.frames) do
+	if f.parent == UIParent and f:IsShown() and f:IsMouseEnabled() and main.overlays[f] and f.level == main.treeTop + 2 then shade = f end
+end
+check(UI.Name.IsOpen() and shade, "the name box shades the window")
+UI.OpenChoice(main, drop, { { id = 1, name = "A" } }, 1, function() end)
+check(not UI.List.IsOpen() and main.modal == UI.Name and not drop.open, "no list opens over the name box")
+UI.Confirm(main, "Sure?", nil, "Yes", function() end)
+check(not UI.DialogShown(), "no dialog opens over the name box")
+-- Keyboard: the box's edit box leaves up and down to the box.
+check(W.focus and W.focus.scripts.OnArrowPressed, "the name box's edit box hands up and down on")
+W.focus:Fire("OnArrowPressed", "DOWN")
+check(UI.Name.IsOpen(), "and an arrow there does not close it")
+W.key(main, "ESCAPE")
+check(not UI.Name.IsOpen() and not shade:IsShown(), "Escape closes the box and its shade")
+local edit = CreateFrame("EditBox", nil, main)
+UI.EditArrows(edit)
+main:Focus(main.nodes[1])
+edit:Fire("OnArrowPressed", "DOWN")
+check(main.focus ~= main.nodes[1], "an edit box's Down moves the window's focus")
+
+-- W10: combat closing a box with the window leaves no tooltip behind.
+local tipNode = buttonNode(L.RESTORE)
+main:Focus(tipNode)
+check(UI.TooltipOwner(), "a focus shows its tooltip")
+UI.CreateProfile.Open(main)
+ns.Fire("FSG_COMBAT_START")
+check(not main:IsShown() and not UI.CreateProfile.IsOpen() and not UI.TooltipOwner(), "combat closes window and box, no tooltip left")
+-- The resume notice is checked with the combat checks; the notice frame must not exist before them.
+UI.resume = nil
+ns.TogglePanel()
+
+-- W24a: a redraw keeps a tooltip whose owner is still under the pointer.
+main.strip.profile:Hover()
+local stripOwner = UI.TooltipOwner()
+main:Refresh()
+check(stripOwner and UI.TooltipOwner() == stripOwner, "a redraw keeps the strip's tooltip under the pointer")
+main.strip.profile:Leave()
+
+-- W26: the window's frame walk waits for a redraw; presets are built once until FSG_LIMIT.
+main:Refresh()
+main:Focus(buttonNode(L.RESTORE))
+check(type(main.treeTop) == "number", "the window's top level is measured once")
+main.treeTop = 5
+main:Focus(buttonNode(L.RESTORE))
+check(tooltipFrame().level == 5 + 8, "a focus change uses the kept level")
+main:Refresh()
+check(main.treeTop ~= 5, "a redraw measures again")
+local builds, build = 0, ns.Catalog.BuildPreset
+ns.Catalog.BuildPreset = function(key) builds = builds + 1 return build(key) end
+ns.Fire("FSG_LIMIT")
+UI.PresetOf("p1")
+local once = builds
+UI.PresetOf("p1")
+check(once > 0 and builds == once, "presets are built once")
+ns.Fire("FSG_LIMIT")
+UI.PresetOf("p1")
+check(builds > once, "a machine limit builds them again")
+ns.Catalog.BuildPreset = build
+
+-- W13: a preset step leaves alone what neither preset covers.
+local p1 = ns.db.profiles.p1
+p1.values = { RenderScale = 1, groundEffectDensity = 128, shadowSoft = 1 }
+check(UI.PresetOf("p1") == "high", "set up as High")
+UI.ApplyPreset(main, "p1", "ultra")
+check(p1.values.graphicsShadowQuality == 4 and p1.values.groundEffectDensity == 128 and p1.values.shadowSoft == 1, "High to Ultra keeps grass and soft shadows")
+p1.values = { graphicsShadowQuality = 5, RenderScale = 1, shadowSoft = 1, groundEffectDensity = 128 }
+check(UI.PresetOf("p1") == "beyond", "set up as Beyond Ultra")
+UI.ApplyPreset(main, "p1", "ultra")
+check(p1.values.shadowSoft == nil and p1.values.groundEffectDensity == 128, "what the old preset set and the new one does not goes; grass stays")
+p1.values = { RenderScale = 0.8 }
+
+-- W29, W28: a missing atlas lookup is no error; the dead helpers are gone.
+local atlasInfo = C_Texture.GetAtlasInfo
+C_Texture.GetAtlasInfo = function() error("missing") end
+check(pcall(UI.Glyph, main, 24, "PAD1"), "a glyph draws without GetAtlasInfo")
+C_Texture.GetAtlasInfo = atlasInfo
+check(UI.At == nil and UI.GlyphAtlas == nil and N.CAT_INDENT == nil, "dead helpers are gone")
+UI.CloseAll()
+W.advance(0.1)
 
 -- The game font has no arrow or minus sign: no U+2192 or U+2212 anywhere in the panel's Lua.
 for _, file in ipairs(FILES) do
@@ -1224,7 +1414,7 @@ ns.db.smart.enabled = false
 UI.Notify.Hide("pending")
 ns.Fire("FSG_PENDING", { values = { graphicsTextureResolution = 2 }, seconds = 5 })
 slotOf("pending").buttons[1]:Click()
-check(last(ns, "ApplyPending")[2] == "user" and last(ns, "ApplyPending")[3].user == true, "Apply now is the player's own")
+check(last(ns, "ApplyPending") and #last(ns, "ApplyPending") == 1, "Apply now calls ApplyPending with no argument")
 ns.Fire("FSG_PENDING", nil)
 
 -- Combat closes the window and offers it again after.
@@ -1238,10 +1428,10 @@ check(UI.Current() == nil, "no opening in combat")
 W.combat = false
 ns.Fire("FSG_COMBAT_END")
 W.advance(0.6)
-local offer = UI.Current()
-check(offer and offer ~= main and offer.text:GetText() == L.RESUME_TEXT, "resume offered after combat")
-W.press(offer, "PAD1")
-check(UI.Current() == main and main:IsShown(), "resume reopens the window")
+local offer = slotOf("resume")
+check(UI.Current() == nil and offer and offer.item.text == L.RESUME_TEXT and #offer.item.buttons == 1, "resume offered after combat as a notice, no window takes the keys")
+offer.buttons[1]:Click()
+check(UI.Current() == main and main:IsShown() and not slotOf("resume"), "resume reopens the window and the notice goes")
 -- A profile held by a macro: the why line, the Overview banner with Back to automatic, the strip and the minimap
 -- tooltip say so; without a hold none of it shows.
 local function readoutTip()
@@ -1343,7 +1533,7 @@ do
 	check(shown() and liveTickers() == 0, "news: all gates open, it shows and the ticker is gone")
 
 	-- The window per the kit.
-	check(win.w == 560 and win.h == 520 and win.strata == "FULLSCREEN_DIALOG" and win.scale == 1, "news: 560 x 520, FULLSCREEN_DIALOG, full scale on a big screen")
+	check(win.w == 560 and win.h == 520 and win.strata == "DIALOG" and win.scale == 1, "news: 560 x 520, DIALOG, full scale on a big screen")
 	check(win.NineSlice.Text:GetText() == "Forever Smart Graphics · What's new", "news: title")
 	check(win.portrait.texture == "Interface\\AddOns\\ForeverSmartGraphics\\Media\\portrait" and win.portrait.w == 62, "news: the round portrait")
 	check(win.glow.x == -20 and win.glow.y == 24, "news: the large portrait focus glow's offsets")
@@ -1508,6 +1698,155 @@ do
 			check(not rest:find("[\128-\255]"), key .. ": ASCII apart from the middle dot and the bullet")
 		end
 	end
+end
+
+-- The 1.0 fix round, pages: one check per fix, over the first stub.
+do
+	local db = ns.db
+	db.options.switching, db.smart.enabled, db.held, ns.pending, ns.adjust, ns.suggestion = true, false, nil, nil, nil, nil
+	ns.cal.running = false
+	UI.OpenPanel("overview")
+	local page
+	for _, c in ipairs(main.scroll.children) do if c.banner then page = c end end
+
+	-- Contract 6: the master switch's words.
+	check(L.SWITCHING == "Manage my graphics" and L.WHY_OFF == "Forever Smart Graphics is turned off. The game's own settings are in use.", "contract 6: Manage my graphics, turned off sentence")
+
+	-- W6 / contract 3: a quiet pending change has no countdown notice, but the Overview banner offers Apply now.
+	db.options.announce = true
+	UI.Notify.Hide("pending")
+	ns.pending = { values = { graphicsTextureResolution = 2 }, seconds = 500, quiet = true }
+	ns.Fire("FSG_PENDING", ns.pending)
+	check(not slotOf("pending"), "W6: no countdown notice while quiet")
+	main:Refresh()
+	check(page.banner:IsShown() and page.banner.buttons[1]:GetText() == L.APPLY_NOW, "W6: the banner shows a quiet change")
+	page.banner.buttons[1]:Click()
+	check(last(ns, "ApplyPending") and #last(ns, "ApplyPending") == 1, "W6: the banner's Apply now takes no argument")
+	ns.pending = nil
+	ns.Fire("FSG_PENDING", nil)
+
+	-- Rounding: a fractional goal is shown whole.
+	db.smart.enabled = true
+	ns.smartState = { status = "holding", fps = 58, target = 60, goal = 59.6 }
+	main:Refresh()
+	check(main.strip.target:GetText() == "target 60", "rounding: the strip's target " .. main.strip.target:GetText())
+
+	-- W14: a long Smart text gets only the room left before the meter, cut, with its whole text in the tooltip.
+	ns.smartState = { status = "raising (testing) with a very long status for the strip", fps = 58, target = 60, goal = 60 }
+	main:Refresh()
+	local strip = main.strip
+	local used = strip.here.w + strip.profile.w + strip.smart.w
+	check(strip.smart.cut and used < strip.w - 96 - 10, "W14: the Smart segment stops before the meter: " .. used)
+	strip.smart:Hover()
+	check(tipLineOf(strip.smart.value:GetText()), "W14: the whole Smart text is in the tooltip")
+	strip.smart:Leave()
+	ns.smartState = nil
+
+	-- W23: a held profile greys the place's profile and preset rows; the sentence does not repeat the banner.
+	db.held = "p1"
+	main:Refresh()
+	check(labelled("Profile for Stormwind Keep") == nil and labelled(L.QUALITY_PRESET) == nil and page.profile.disabled and page.preset.disabled, "W23: held, the profile and preset rows are greyed")
+	check(not page.why:GetText():find("holding", 1, true) and page.banner.text:GetText():find("holding", 1, true), "W23: the banner says it once: " .. page.why:GetText())
+	db.held = nil
+
+	-- W7, W22, card words: while Find my best settings runs, Start is off, Finish follows the overlay's rule.
+	ns.Calibrate.Start(60)
+	ns.cal.scenes[1].seconds = 31
+	main:Refresh()
+	check(not page.calibrate.button:IsEnabled(), "W7: Start is disabled with its row")
+	check(page.banner.buttons[1]:IsEnabled(), "W22: Finish after 30 s in a scene, as the overlay")
+	check(page.banner.text:GetText():find("City: searching", 1, true) and page.banner.text:GetText():find("Open world: waiting", 1, true), "card: scene words")
+	open("locations")
+	local lpage
+	for _, c in ipairs(main.scroll.children) do if c.typeRows then lpage = c end end
+	check(labelled(L.SWITCHING) == nil and lpage.toggle.disabled, "W7: Manage my graphics is greyed while it runs")
+	ns.cal.running = false
+	ns.cal.scenes[1].seconds = 10
+
+	-- W7: no Add this place stop when the place already has its row.
+	db.overrides["map:1453"] = { profile = "p1", name = "Stormwind Keep" }
+	main:Refresh()
+	check(buttonNode(lpage.add.buttons[1]:GetText()) == nil, "W7: a greyed Add this place takes no focus")
+
+	-- W25: a place row has no right-click Remove.
+	labelled("Stormwind Keep").region:Click("RightButton")
+	check(db.overrides["map:1453"] ~= nil, "W25: right-click does not remove a place")
+	db.overrides["map:1453"] = nil
+
+	-- W22: Y on a location type moves to its Smart goal; the profile is not stepped.
+	main:Refresh()
+	local city = nodeWhere(function(n) return n.tip and n.tip.title == "City" and not n.styleKey end)
+	main:Focus(city)
+	local assigned = #ns.calls
+	W.press(main, "PAD4")
+	check(main.focus and main.focus.styleKey == "city" and #ns.calls == assigned, "W22: Y goes to the goal, nothing assigned")
+
+	-- W12, W25, plurals: only real lag is listed; rows do nothing on a row click.
+	ns.areas[2].lagShare = 0.01
+	open("smart")
+	local spage
+	for _, c in ipairs(main.scroll.children) do if c.lagFold then spage = c end end
+	if not spage.lagFold.IsOpen() then spage.lagFold.Toggle() end
+	check(spage.lagFold.count:GetText() == "1 place" and labelled("Durotar") == nil, "W12: an area under 5% is not a place that lagged")
+	if not spage.learnedFold.IsOpen() then spage.learnedFold.Toggle() end
+	local saves = #ns.calls
+	labelled("City").region:Click()
+	labelled("City").region:Click("RightButton")
+	check(#ns.calls == saves, "W25: a learned row's own buttons act, the row does not")
+	ns.areas[2].lagShare = 0.12
+
+	-- W15: a long "Used in" line gives way to its count.
+	for i = 1, 8 do db.overrides["map:" .. (500 + i)] = { profile = "p1", name = "A place with a long name " .. i } end
+	UI.OpenPanel("profile", "p1")
+	check(main.canvas.subtitle:GetText() == "Used in 9 places" and main.canvas.subtitle.wordWrap == false, "W15: the subtitle falls back: " .. main.canvas.subtitle:GetText())
+	for i = 1, 8 do db.overrides["map:" .. (500 + i)] = nil end
+
+	-- Default's row says it is used where nothing else is only when that is true.
+	open("profiles")
+	local defaultRow = nodeWhere(function(n) return n.profileRowId == "default" end)
+	check(defaultRow.region.usage:GetText() == L.USED_BY_DEFAULT, "Default: used where a type has none")
+	for _, key in ipairs(ns.Location.KEYS) do db.locations[key] = db.locations[key] or "p1" end
+	main:Refresh()
+	defaultRow = nodeWhere(function(n) return n.profileRowId == "default" end)
+	check(defaultRow.region.usage:GetText() == L.NOT_USED, "Default: every type has its own profile: " .. defaultRow.region.usage:GetText())
+	for _, key in ipairs(ns.Location.KEYS) do if key ~= "city" then db.locations[key] = nil end end
+
+	-- A limit on the low side says so.
+	db.limits, db.limitSides = { shadowSoft = 0 }, { shadowSoft = "min" }
+	UI.Folded["hidden:default"] = false
+	UI.OpenPanel("profile", "default")
+	main:Focus(row("shadowSoft"))
+	check(tipLineOf("lowest on this machine: Off"), "a minimum-side limit reads lowest on this machine")
+	db.limitSides = nil
+
+	-- W21: a long notice title wraps instead of being cut.
+	ns.Fire("FSG_SUGGEST", { key = "map:9", overrideKey = "map:9", name = "Eastern Plaguelands Outskirts, the far end", avg = 41, goal = 60 })
+	local sug = slotOf("suggest")
+	check(sug and sug.text.wordWrap and sug.text.w <= 240, "W21: the title wraps in the notice width")
+	UI.Notify.Hide("suggest")
+
+	-- W24c: x on Smart's notice clears it for the run, with no summary after, while another notice keeps the frame up.
+	db.options.smartNotice = true
+	UI.CloseAll()
+	ns.Fire("FSG_PENDING", { values = { graphicsTextureResolution = 2 }, seconds = 30 })
+	ns.Fire("FSG_CHANGES", { reason = "smart mode", source = "smart", changes = { { cvar = "RenderScale", label = "Render scale", from = 1, to = 0.95 } } })
+	ns.Fire("FSG_CHANGES", { reason = "smart mode", source = "smart", changes = { { cvar = "RenderScale", label = "Render scale", from = 0.95, to = 0.9 } } })
+	local smart = slotOf("smart")
+	check(smart, "W24c: Smart's notice is up")
+	smart.close:Click()
+	W.advance(0.5)
+	check(not slotOf("smart"), "W24c: closed, it does not come back")
+	W.advance(5)
+	check(not slotOf("smart"), "W24c: and no summary follows")
+	ns.Fire("FSG_CHANGES", { reason = "after combat", source = "profile", changes = { { cvar = "RenderScale", from = 1, to = 0.9 } } })
+	check(slotOf("done") and slotOf("done").text:GetText() == "Applied after combat: 1 change", "plural: one change")
+	local many = { "graphicsShadowQuality", "RenderScale", "graphicsTextureResolution", "graphicsViewDistance", "groundEffectDensity", "shadowTextureSize" }
+	ns.Fire("FSG_COMBAT_LOW", { fps = 31, goal = 60, cuts = many })
+	check(slotOf("combat") and slotOf("combat").sub:GetText() == "Shadow quality +5", "a long cut list gives way to the first name and a count")
+	ns.Fire("FSG_COMBAT_END")
+	db.options.smartNotice, db.smart.enabled = nil, false
+	ns.Fire("FSG_PENDING", nil)
+	UI.Notify.Hide("done")
 end
 
 -- No Smart.lua: the Smart tab says so.

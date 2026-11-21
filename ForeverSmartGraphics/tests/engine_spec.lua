@@ -11,12 +11,12 @@ local ns, db = W.ns, W.ns.db
 assert(db.version == 1 and ForeverSmartGraphicsDB == db and not W.said("repaired"))
 assert(db.options.switching == true and db.options.debug == false)
 for _, key in ipairs({ "announce", "suggest", "smartNotice", "notifyProfile", "chatLog", "chatLogSmart" }) do assert(db.options[key] == false, key .. " off by default") end
-assert(db.migrations.quietDefaults == true)
+assert(W.said("Smart Graphics|r is ready%. Type /fsg to open it%."), "first install greets once")
 assert(db.options.minimap.shown == true and db.options.minimap.angle == 200)
 assert(db.original.graphicsShadowQuality == "3" and db.original.RenderScale == "0.75" and db.original.useTargetFPS == "1", "original captured")
 assert(db.profiles.default.name == "Default" and db.profileOrder[1] == "default" and db.nextId == 1)
 assert(next(db.locations) == nil and next(db.overrides) == nil and next(db.unsupported) == nil)
-assert(db.smart.enabled == false and db.smart.target == 60 and db.smart.scaleFloor == 0.75 and next(db.smart.learned) == nil and db.migrations.floor75)
+assert(db.smart.enabled == false and db.smart.target == 60 and db.smart.scaleFloor == 0.75 and db.migrations == nil)
 assert(#W.writes == 0, "Default with no values writes nothing")
 
 -- db: the original is never rewritten; a damaged db is repaired.
@@ -36,8 +36,7 @@ W = new({ cvars = { graphicsShadowQuality = "1" }, db = {
 	nextId = 2,
 	locations = { city = "p3", raid = "gone", dungeon = "default", nowhere = "p3", delve = "p3", scenario = "p3", housing = "p3" },
 	overrides = { ["map:84"] = { profile = "p3", name = "Stormwind City" }, ["map:85"] = { profile = "gone" }, bad = { profile = "p3" } },
-	smart = { enabled = "x", target = 999, scaleFloor = 0.1, learned = { city = { values = { RenderScale = 0.6 }, gains = { RenderScale = { ema = 5, n = 2 }, nope = {} }, t = 10 }, bad = 3 },
-		areas = { ["map:84"] = { anything = 1 }, broken = 7 }, gains = { RenderScale = { ema = 4, n = 1 }, shadowSoft = "x" } },
+	smart = { enabled = "x", target = 999, scaleFloor = 0.1, 		areas = { ["map:84"] = { anything = 1 }, broken = 7 }, gains = { RenderScale = { ema = 4, n = 1 }, shadowSoft = "x" } },
 	limits = { shadowTextureSize = 2048, gxapi = 1, sunShafts = 0 / 0, lodObjectFadeScale = 90 },
 	limitSides = { lodObjectFadeScale = "min" },
 	unsupported = { vrsValar = true, gxapi = true, ffxglow = "yes" },
@@ -59,11 +58,10 @@ assert(W.same(db.profileOrder, { "default", "p3" }) and db.nextId == 4, "order r
 assert(W.same(db.locations, { city = "p3" }), "unknown ids, removed keys (delve/scenario/housing) gone, default stored as nil")
 assert(db.overrides["map:84"].profile == "p3" and db.overrides["map:85"] == nil and db.overrides.bad == nil)
 assert(db.smart.enabled == false and db.smart.target == 60 and db.smart.scaleFloor == 0.75)
-assert(db.smart.learned.city.gains.RenderScale.n == 2 and db.smart.learned.city.gains.nope == nil and db.smart.learned.bad == nil)
 assert(db.options.calibratePos == nil and W.same(db.smart.areas, { ["map:84"] = { anything = 1 } }) and W.same(db.smart.gains, { RenderScale = { ema = 4, n = 1 } }))
-assert(W.same(db.limits, { shadowTextureSize = 2048, lodObjectFadeScale = 90 }) and W.same(db.limitSides, { shadowTextureSize = "max", lodObjectFadeScale = "min" }))
-assert(W.ns.Catalog.Clamp("shadowTextureSize", 4096) == 2048 and W.ns.Catalog.Clamp("lodObjectFadeScale", 45) == 90 and W.ns.Catalog.Clamp("lodObjectFadeScale", 300) == 300)
-assert(W.same(db.unsupported, { vrsValar = true }) and #db.debugLog == 500 and db.debugLog[1] == "line 101" and db.keep == "other")
+assert(next(db.limits) == nil and next(db.limitSides) == nil and next(db.unsupported) == nil, "machine limits are found again every session")
+assert(W.ns.Catalog.Clamp("shadowTextureSize", 4096) == 4096 and W.ns.Catalog.Clamp("lodObjectFadeScale", 45) == 45)
+assert(#db.debugLog == 500 and db.debugLog[1] == "line 101" and db.keep == "other")
 
 W = new({ db = { options = { calibratePos = { point = "CENTER", x = 10, y = -20 } } } })
 W.login()
@@ -132,7 +130,7 @@ assert(select(2, capped.Range("RenderScale")) == 1.5 and capped.Clamp("RenderSca
 
 -- Presets: the game's quality table, or a straight line without it.
 local low = C.BuildPreset("low")
-assert(low.RenderScale == 1 and low.graphicsSSAO == C.Clamp("graphicsSSAO", 4 * 2 / 10) and low.graphicsParticleDensity >= 1)
+assert(low.RenderScale == 1 and low.graphicsSSAO == C.Clamp("graphicsSSAO", 4 * 1 / 9) and low.graphicsParticleDensity >= 1)
 local beyond, fps = C.BuildPreset("beyond"), C.BuildPreset("fps")
 local BEYOND = {
 	graphicsShadowQuality = 5, graphicsLightMode = 3, graphicsSSAO = 4, graphicsComputeEffects = 4, graphicsLiquidDetail = 3, graphicsPBRLiquidDetail = 2,
@@ -142,11 +140,11 @@ local BEYOND = {
 	shadowTextureSize = 2048, shadowNumCascades = 4, assaoBlurPassCount = 3, ResampleAlwaysSharpen = 1, reflectionMode = 3, shadowSoft = 1, sunShafts = 2,
 }
 for cvar, value in pairs(BEYOND) do assert(beyond[cvar] == value, "beyond " .. cvar) end
-assert(W.same(C.BuildPreset("fidelity"), beyond) and C.PRESETS[6].key == "beyond" and C.PRESETS[6].name == "Beyond Ultra" and C.PRESETS[7].key == "fps", "fidelity is an alias")
+assert(C.BuildPreset("fidelity") == nil and C.PRESETS[6].key == "beyond" and C.PRESETS[6].name == "Beyond Ultra" and C.PRESETS[7].key == "fps")
 assert(C.Get("doodadLodScale").step == 25 and C.Get("shadowNumCascades").min == 1 and not C.Get("shadowNumCascades").heavy and not C.Get("ResampleAlwaysSharpen").smart)
 assert(fps.RenderScale == 0.6 and fps.shadowSoft == 0 and fps.graphicsShadowQuality == low.graphicsShadowQuality)
 assert(#C.PRESETS == 7 and C.BuildPreset("nope") == nil)
-W = new({ levels = { graphicsSSAO = { [2] = 1, [10] = 4 }, graphicsShadowQuality = { [2] = 9 } } })
+W = new({ levels = { graphicsSSAO = { [1] = 1, [9] = 4 }, graphicsShadowQuality = { [1] = 9 } } })
 W.login()
 local preset = W.ns.Catalog.BuildPreset("low")
 assert(preset.graphicsSSAO == 1 and preset.graphicsShadowQuality == 5, "game values, clamped")
@@ -220,13 +218,23 @@ W.zone, W.subzone = "", "Trade District"
 assert(L.Read().name == "Trade District")
 W.zone, W.subzone = "Stormwind City", ""
 
--- Debounce: a burst of events gives one message, 0.3 s after the last one; no change gives none.
+-- Debounce: a burst of events gives one message, 0.3 s after the last one; no change gives none. Open world to city
+-- without a loading screen (an inn) counts only after 3 s; stepping back out within them gives nothing.
 W.fire("ZONE_CHANGED_NEW_AREA")
 W.run(0.2)
 W.fire("PLAYER_UPDATE_RESTING")
 W.run(0.2)
 assert(#seen == 1, "still waiting")
-W.run(0.2)
+W.run(2)
+assert(#seen == 1, "city: waits 3 s")
+W.resting = false
+W.fire("PLAYER_UPDATE_RESTING")
+W.run(4)
+assert(seen[#seen].loc.key == "outdoor" and L.Current().key == "outdoor", "a step in and out: never city")
+seen = { seen[1] }
+W.resting = true
+W.fire("PLAYER_UPDATE_RESTING")
+W.run(3.5)
 assert(#seen == 2 and seen[2].loc.key == "city" and seen[2].prev.key == "outdoor" and not seen[2].loading)
 W.fire("ZONE_CHANGED")
 W.run(0.5)
@@ -247,7 +255,8 @@ assert(L.ProfileFor() == placeId and select(2, L.ProfileFor()) == "place")
 W.ns.db.overrides["map:85"].profile = "gone"
 assert(L.ProfileFor() == typeId)
 
--- Apply: order, heavy countdown (announce on), combat pause, loading writes heavy at once.
+-- Apply: order; the player's own edit writes heavy settings at once; any other heavy change counts down (announce on),
+-- pauses in combat; a loading screen writes it at once.
 W = new()
 W.login()
 ns, db = W.ns, W.ns.db
@@ -264,50 +273,80 @@ P.Assign("outdoor", id)
 local q, r, h = W.wrote("graphicsShadowQuality"), W.wrote("RenderScale"), W.wrote("shadowSoft")
 assert(q and r and h and q < r and r < h, "quality, render, hidden")
 assert(W.cvars.shadowSoft == "1" and W.cvars.RenderScale == "0.6")
-assert(not W.wrote("graphicsTextureResolution") and not W.wrote("shadowTextureSize"), "heavy waits")
+assert(W.cvars.graphicsTextureResolution == "0" and W.cvars.shadowTextureSize == "1024" and ns.Apply.Pending() == nil and #pend == 0, "the player's own edit: heavy at once")
 assert(not W.wrote("groundEffectDensity"), "hidden cvars no profile sets are left to the presets")
+-- Walking into a place with its own profile (no loading screen) is not the player's edit: the heavy part waits.
+local spot = P.Create("Spot", { graphicsTextureResolution = 2, shadowTextureSize = 2048 })
+P.SetOverride("map:1413", "Spot", spot)
+W.mapID = 1413
+W.fire("ZONE_CHANGED_NEW_AREA")
+W.run(0.4)
 local info = ns.Apply.Pending()
-assert(info and info.seconds == 10 and info.values.graphicsTextureResolution == 0 and info.values.shadowTextureSize == 1024 and not info.waitingCombat)
-P.SetValue(id, "graphicsSSAO", 1)
+assert(info and info.seconds == 10 and info.values.graphicsTextureResolution == 2 and info.values.shadowTextureSize == 2048 and not info.waitingCombat and not info.quiet)
+assert(W.cvars.graphicsTextureResolution == "0", "waits")
+ns.Apply.Refresh("location")
 assert(ns.Apply.Pending().seconds == 10 and #pend == 1, "same heavy change keeps its countdown")
 W.run(3.05)
 assert(ns.Apply.Pending().seconds == 7 and pend[#pend] == 7)
 W.setCombat(true)
 assert(ns.Apply.Pending().waitingCombat)
 W.run(5)
-assert(ns.Apply.Pending().seconds == 7 and W.cvars.graphicsTextureResolution == "2", "paused in combat")
+assert(ns.Apply.Pending().seconds == 7 and W.cvars.graphicsTextureResolution == "0", "paused in combat")
 W.setCombat(false)
 assert(ns.Apply.Pending().seconds == 10 and not ns.Apply.Pending().waitingCombat, "countdown restarts")
 W.run(10.05)
-assert(ns.Apply.Pending() == nil and W.cvars.graphicsTextureResolution == "0" and W.cvars.shadowTextureSize == "1024" and pend[#pend] == false)
+assert(ns.Apply.Pending() == nil and W.cvars.graphicsTextureResolution == "2" and W.cvars.shadowTextureSize == "2048" and pend[#pend] == false)
 assert(W.liveTickers() == 0)
 
--- Apply now, in combat too; /fsg applynow; a newer change replaces the old.
-P.SetValue(id, "textureFilteringMode", 2)
+-- Apply now, in combat too, ignores any argument; /fsg applynow; a newer change replaces the old.
+db.profiles[spot].values.textureFilteringMode = 2
+ns.Apply.Refresh("location")
 assert(ns.Apply.Pending().values.textureFilteringMode == 2)
-P.SetValue(id, "textureFilteringMode", 3)
+db.profiles[spot].values.textureFilteringMode = 3
+ns.Apply.Refresh("location")
 assert(ns.Apply.Pending().values.textureFilteringMode == 3 and ns.Apply.Pending().seconds == 10)
 W.setCombat(true)
-W.slash("applynow")
-assert(W.cvars.textureFilteringMode == "3" and ns.Apply.Pending() == nil)
+local applied
+ns.On("FSG_CHANGES", function(batch) applied = batch end)
+ns.Apply.ApplyPending("user", { user = true })
+W.run(0.1)
+assert(W.cvars.textureFilteringMode == "3" and ns.Apply.Pending() == nil and applied.source == "apply" and applied.reason == "Apply now", "the argument is ignored")
 W.setCombat(false)
 W.slash("applynow")
 assert(W.said("nothing is waiting"))
 
--- Announce off: heavy changes wait silently for a loading screen, which writes them at once.
+-- Announce off: the change is still kept (quiet, no countdown, no ticks); applynow and status see it; a loading
+-- screen writes it at once.
 db.options.announce = false
-P.SetValue(id, "graphicsTextureResolution", 1)
-assert(ns.Apply.Pending() == nil and W.cvars.graphicsTextureResolution == "0")
+db.profiles[spot].values.graphicsTextureResolution = 1
+pend = {}
+ns.Apply.Refresh("location")
+info = ns.Apply.Pending()
+assert(info and info.quiet and info.seconds == 600 and W.cvars.graphicsTextureResolution == "2" and #pend == 1 and W.liveTickers() == 0)
+W.run(5)
+assert(#pend == 1 and ns.Apply.Pending().seconds <= 596 and ns.Apply.Pending().seconds >= 594, "no per-second messages; seconds left counts down")
+W.lines = {}
+W.slash("status")
+assert(W.said("texture change waiting 59%d s"))
 W.fire("PLAYER_ENTERING_WORLD", false, false)
 W.run(1)
-assert(W.cvars.graphicsTextureResolution == "1", "loading screen")
+assert(W.cvars.graphicsTextureResolution == "1" and ns.Apply.Pending() == nil and pend[#pend] == false, "loading screen")
+db.profiles[spot].values.graphicsTextureResolution = 0
+ns.Apply.Refresh("location")
+W.slash("applynow")
+assert(W.cvars.graphicsTextureResolution == "0" and ns.Apply.Pending() == nil, "applynow applies a quiet change")
 db.options.announce = true
+db.overrides["map:1413"] = nil
+W.mapID = 1412
+W.fire("ZONE_CHANGED_NEW_AREA")
+W.run(0.5)
+ns.Apply.ApplyPending()
 
 -- A heavy change from a location change during a loading screen is written at once.
 W.run(4)
 local raid = P.Create("Raid", { graphicsTextureResolution = 2 })
 P.Assign("raid", raid)
-assert(ns.Apply.Pending() == nil and W.cvars.graphicsTextureResolution == "1", "not the current location")
+assert(ns.Apply.Pending() == nil and W.cvars.graphicsTextureResolution == "0", "not the current location")
 W.instance = { "Nerub-ar", "raid", 14, "", 30, 0, false, 2657 }
 W.fire("PLAYER_ENTERING_WORLD", false, false)
 W.run(1)
@@ -354,12 +393,24 @@ W.ignore.RenderScale = "0.6"
 assert(not ns.Apply.Write("RenderScale", 0.75) and db.limits.RenderScale == 0.6 and db.limitSides.RenderScale == "max", "a real cap inside 0.5..max")
 W.ignore.RenderScale, db.limits.RenderScale, db.limitSides.RenderScale = nil, nil, nil
 
--- Readback: twice ignored in a session -> unsupported, skipped afterwards.
-local unsupported = {}
-ns.On("FSG_UNSUPPORTED", function(cvar) unsupported[#unsupported + 1] = cvar end)
+-- Readback: a refused write that stays at a legal value is a limit on that side, never "unsupported".
 W.ignore.vrsValar = "0"
 ok, readback = ns.Apply.Write("vrsValar", 2)
-assert(not ok and readback == 0 and not db.unsupported.vrsValar and not db.limits.vrsValar)
+assert(not ok and readback == 0 and db.limits.vrsValar == 0 and db.limitSides.vrsValar == "max")
+assert(not ns.Apply.Write("vrsValar", 2) and not db.unsupported.vrsValar, "refused twice: still a limit")
+W.ignore.vrsValar, db.limits.vrsValar, db.limitSides.vrsValar = nil, nil, nil
+W.ignore.lodObjectFadeScale, W.cvars.lodObjectFadeScale = "90", "90"
+assert(not ns.Apply.Write("lodObjectFadeScale", 45) and db.limits.lodObjectFadeScale == 90 and db.limitSides.lodObjectFadeScale == "min", "kept at 90: a minimum")
+W.ignore.lodObjectFadeScale, db.limits.lodObjectFadeScale, db.limitSides.lodObjectFadeScale = nil, nil, nil
+-- A value the game can't read back, twice in a row: unsupported, skipped afterwards. A good write in between resets the count.
+local unsupported = {}
+ns.On("FSG_UNSUPPORTED", function(cvar) unsupported[#unsupported + 1] = cvar end)
+W.ignore.vrsValar = "x"
+assert(not ns.Apply.Write("vrsValar", 2) and not db.unsupported.vrsValar)
+W.ignore.vrsValar = nil
+assert(ns.Apply.Write("vrsValar", 1))
+W.ignore.vrsValar = "x"
+assert(not ns.Apply.Write("vrsValar", 2) and not db.unsupported.vrsValar, "the good write cleared the miss")
 assert(not ns.Apply.Write("vrsValar", 1) and db.unsupported.vrsValar and unsupported[1] == "vrsValar")
 P.SetValue("default", "vrsValar", 2)
 W.clearWrites()
@@ -410,7 +461,7 @@ W.run(4)
 W.ns.Smart.SetEnabled(true)
 assert(smart.key == "outdoor" and W.cvars.RenderScale == "0.6" and W.cvars.useTargetFPS == "0")
 W.slash("status")
-assert(W.said("Mulgore · Open world: Default %(default%) · smart holding · 60 fps"))
+assert(W.said("Mulgore · Open world: Default %(Default%) · smart holding · 60 fps"))
 W.ns.Smart.SetEnabled(false)
 assert(W.cvars.RenderScale == "0.75" and W.cvars.useTargetFPS == "1")
 
@@ -453,7 +504,7 @@ assert(W.ns.InCombat())
 W.setCombat(false)
 assert(late and W.same(combat, { "start", "end" }) and not W.ns.InCombat())
 
--- Descriptions and FPS impact: every entry, Latin-1 text; measured gains (3+ samples) win over probe and estimate.
+-- Descriptions and FPS impact: every entry, Latin-1 text; measured gains (8+ samples) win over probe and estimate.
 W = new()
 W.login()
 local C = W.ns.Catalog
@@ -471,8 +522,11 @@ level, percent, source = C.Impact("groundEffectDensity")
 assert(level == "medium" and percent == nil and source == "estimate")
 local smart = W.ns.db.smart
 local function gains(cvar, ...)
-	smart.learned, smart.gains = {}, {}
-	for i, g in ipairs({ ... }) do smart.learned["l" .. i] = { values = {}, gains = { [cvar] = { ema = g[1], n = g[2] } }, t = 0 } end
+	local sum, n = 0, 0
+	for _, g in ipairs({ ... }) do
+		if g[1] >= 0 and g[1] <= 40 or cvar == "RenderScale" and g[1] >= 0 then sum, n = sum + g[1] * g[2], n + g[2] end
+	end
+	smart.gains = { [cvar] = { ema = n > 0 and sum / n or 0, n = n } }
 	return C.Impact(cvar)
 end
 assert(gains("graphicsComputeEffects", { 15, 3 }) == "medium" and select(3, C.Impact("graphicsComputeEffects")) == "probe", "3 noisy samples keep the probe level")
@@ -484,9 +538,9 @@ level, percent = gains("graphicsSSAO", { 3, 8 }, { -6, 30 }, { 55, 30 })
 assert(near(percent, (8 * 3 + 5 * 2.5) / 13), "negative and absurd emas ignored")
 level, percent = gains("RenderScale", { 50, 10 })
 assert(near(percent, (10 * 50 + 5 * 6) / 15) and level == "very high", "RenderScale may exceed 40% per step")
-smart.learned, smart.gains = {}, { sunShafts = { ema = 0.2, n = 9 }, ffxglow = { ema = 1, n = 7 } }
+smart.gains = { sunShafts = { ema = 0.2, n = 9 }, ffxglow = { ema = 1, n = 7 } }
 level, percent, source = C.Impact("sunShafts")
-assert(level == "low" and near(percent, (9 * 0.2 + 5 * 2.5 / 2) / 14) and source == "measured", "global gains when no location has any")
+assert(level == "low" and near(percent, (9 * 0.2 + 5 * 2.5 / 2) / 14) and source == "measured", "the measured gains")
 assert(select(3, C.Impact("ffxglow")) == "estimate", "7 samples is not measured")
 assert(C.Impact("shadowSoft") == "high" and select(2, C.Impact("shadowSoft")) == 11)
 
@@ -516,10 +570,10 @@ assert(#lines == 1 and lines[1]:find("Changed (Open world: Fast): Shadow quality
 W.lines, batches = {}, {}
 ns.Apply.Write("graphicsSSAO", 1, "test")
 ns.Apply.Write("sunShafts", 2)
-ns.Apply.Write("graphicsSSAO", 2, "Smart adjust")
+ns.Apply.Write("graphicsSSAO", 2, "Find my best settings")
 W.run(0.1)
 assert(#changedLines() == 0, "Smart's steps are silent by default")
-assert(#batches == 2 and batches[1].source == "smart" and batches[1].reason == "smart mode" and batches[2].source == "adjust", "FSG_CHANGES fires anyway; unchanged writes give none")
+assert(#batches == 2 and batches[1].source == "smart" and batches[1].reason == "smart mode" and batches[2].source == "calibrate", "FSG_CHANGES fires anyway; unchanged writes give none")
 W.slash("log smart on")
 assert(db.options.chatLogSmart == true and W.said("Smart mode changes in chat on"))
 W.lines, batches = {}, {}
@@ -557,27 +611,19 @@ assert(#lines >= 2 and parts == 14, "long batch split over lines, nothing droppe
 W = new({ db = { version = 1, options = { chatLog = "yes", chatLogSmart = "yes" } } })
 W.login()
 assert(W.ns.db.options.chatLog == false and W.ns.db.options.chatLogSmart == false, "repaired to the defaults")
-W = new({ db = { version = 1, migrations = { quietDefaults = true }, options = { chatLog = false, chatLogSmart = true } } })
+W = new({ db = { version = 1, options = { chatLog = false, chatLogSmart = true } } })
 W.login()
 assert(W.ns.db.options.chatLog == false and W.ns.db.options.chatLogSmart == true, "saved choices are kept")
 
--- Floor default 60% -> 75%: an old default moves once; a 60% picked after the migration stays.
 W = new({ db = { version = 1, smart = { scaleFloor = 0.6 } } })
 W.login()
-assert(W.ns.db.smart.scaleFloor == 0.75 and W.ns.db.migrations.floor75 == true, "old default moved")
-W = new({ db = { version = 1, smart = { scaleFloor = 0.6 }, migrations = { floor75 = true } } })
-W.login()
-assert(W.ns.db.smart.scaleFloor == 0.6, "chosen after the migration: kept")
-W = new({ db = { version = 1, smart = { scaleFloor = 0.5 } } })
-W.login()
-assert(W.ns.db.smart.scaleFloor == 0.5, "a custom floor is not touched")
+assert(W.ns.db.smart.scaleFloor == 0.6, "a saved floor is not touched")
 
--- Goal + Pace: repaired, the old styles migrated once, the frame cap only restored (Efficient is gone).
+-- Goal + Pace: repaired; the frame cap captured and restored.
 W = new()
 W.login()
 ns, db = W.ns, W.ns.db
 assert(db.smart.goal == "balanced" and db.smart.pace == "balanced" and next(db.smart.goals) == nil and not W.said("repaired"), "fresh: balanced/balanced")
-assert(db.smart.mode == nil and db.smart.modes == nil and db.migrations.goalPace, "no old fields")
 assert(db.original.maxFPS == "73" and db.original.useMaxFPS == "1", "frame cap captured at first load")
 assert(not ns.Profiles.SetValue("default", "maxFPS", 60))
 for _, preset in ipairs(ns.Catalog.PRESETS) do assert(preset.build().maxFPS == nil, "no frame cap in presets") end
@@ -591,26 +637,15 @@ local function migrate(smart, extra)
 	W.login()
 	return W.ns.db.smart
 end
-local MAP = { balanced = { "balanced", "balanced" }, smooth = { "balanced", "smooth" }, performance = { "fps", "aggressive" },
-	fidelity = { "fidelity", "balanced" }, quality = { "fidelity", "balanced" }, efficient = { "balanced", "balanced" } }
-for old, want in pairs(MAP) do
-	local smart = migrate({ mode = old, modes = { city = old } })
-	assert(smart.goal == want[1] and smart.pace == want[2] and smart.goals.city == want[1] and smart.mode == nil and smart.modes == nil, old)
-	assert((W.cvars.maxFPS == "144") == (old == "efficient"), old .. ": frame cap restored only after Efficient")
-end
-local smart = migrate({ mode = "smooth", modes = { raid = "efficient", arena = "performance", moon = "fidelity", outdoor = 5 } })
-assert(smart.goal == "balanced" and smart.pace == "smooth" and W.same(smart.goals, { raid = "balanced", arena = "fps" }), "per-place styles become goals")
-assert(W.cvars.maxFPS == "144", "a per-place Efficient restores the cap too")
-smart = migrate({ mode = "efficient" }, { migrations = { goalPace = true } })
-assert(W.cvars.maxFPS == "60" and smart.mode == "efficient" and smart.goal == "balanced", "the migration runs once")
-smart = migrate({ goal = "turbo", pace = 3, goals = { city = "fps", raid = "nope", moon = "fidelity" } }, { migrations = { goalPace = true } })
+local smart
+smart = migrate({ goal = "turbo", pace = 3, goals = { city = "fps", raid = "nope", moon = "fidelity" } })
 assert(smart.goal == "balanced" and smart.pace == "balanced" and W.same(smart.goals, { city = "fps" }) and W.said("repaired"), "bad goal, pace and goals dropped")
-smart = migrate({ goal = "fidelity", pace = "aggressive", goals = "x" }, { migrations = { goalPace = true } })
+smart = migrate({ goal = "fidelity", pace = "aggressive", goals = "x" })
 assert(smart.goal == "fidelity" and smart.pace == "aggressive" and next(smart.goals) == nil)
 assert(W.ns.db.original.maxFPS == "144", "a captured frame cap is never overwritten")
 
--- Chat log reasons: a value Smart shaped is credited to smart mode (with the style and the learned note), the
--- profile's own values to the profile.
+-- Chat log reasons: a value Smart shaped is credited to smart mode (with the goal), the profile's own values to the
+-- profile.
 W = new()
 local shaping = { on = false }
 W.ns.Smart = {
@@ -627,7 +662,6 @@ W.ns.Smart = {
 }
 W.login()
 W.run(4)
-W.ns.db.smart.learned.outdoor = { values = { RenderScale = 0.9 }, gains = {}, t = 0 }
 W.ns.db.options.chatLog = true
 shaping.on = true
 W.lines = {}
@@ -639,12 +673,7 @@ W.cvars.RenderScale, W.cvars.graphicsShadowQuality = "0.75", "3"
 W.ns.Profiles.SetValue("default", "graphicsShadowQuality", 2)
 W.run(0.1)
 assert(W.said("Changed %(Open world: Default%): Shadow quality High to Good$"), "the profile's value under the profile")
-assert(W.said("Changed %(smart mode %(Fidelity%), learned for this place%): Render scale 75%% to 90%%$"), "Smart's value under smart mode")
-W.ns.db.smart.learned.outdoor = nil
-W.cvars.RenderScale, W.lines = "0.75", {}
-W.ns.Apply.Refresh("location")
-W.run(0.1)
-assert(W.said("Changed %(smart mode %(Fidelity%)%): Render scale 75%% to 90%%$"), "no learned note when not learned here")
+assert(W.said("Changed %(smart mode %(Fidelity%)%): Render scale 75%% to 90%%$"), "Smart's value under smart mode")
 
 -- Nothing changes in combat: automatic writes are held (latest wins) and land as one batch at combat end.
 W = new()
@@ -659,45 +688,40 @@ assert(not ok and why == "combat" and not W.wrote("sunShafts") and W.cvars.sunSh
 for _ = 1, 3 do ns.Apply.Write("sunShafts", 2, "smart mode (Balanced)") end
 ns.Apply.Write("maxFPS", 60)
 assert(not db.unsupported.sunShafts, "combat never counts as a miss")
-assert(W.same(ns.Apply.CombatHeld(), { sunShafts = 2, maxFPS = 60 }))
 assert(ns.Apply.Write("graphicsSSAO", 1, "test", { user = true }) and W.cvars.graphicsSSAO == "1", "a user write lands in combat")
 local profile = ns.Profiles.Create("Town", { graphicsShadowQuality = 1 })
 assert(W.cvars.graphicsShadowQuality == "3", "the new profile is not used here yet")
 ns.Profiles.Assign("city", profile)
 W.resting = true
 W.fire("PLAYER_UPDATE_RESTING")
-W.run(1)
+W.run(3.5)
 assert(ns.Location.Current().key == "city" and W.cvars.graphicsShadowQuality == "3", "a location change in combat waits")
-assert(ns.Apply.CombatHeld().graphicsShadowQuality == 1)
 W.clearWrites()
 batches = {}
 W.run(0.1)
 W.setCombat(false)
-assert(ns.Apply.CombatHeld() == nil and W.cvars.sunShafts == "2" and W.cvars.maxFPS == "60" and W.cvars.graphicsShadowQuality == "1", "applied at combat end, latest value")
+assert(W.cvars.sunShafts == "2" and W.cvars.maxFPS == "60" and W.cvars.graphicsShadowQuality == "1", "applied at combat end, latest value")
 local count = 0
-for _, w in ipairs(W.writes) do if w[1] == "sunShafts" then count = count + 1 end end
-assert(count == 1, "written once")
+for _, w in ipairs(W.writes) do if w[1] == "sunShafts" or w[1] == "graphicsShadowQuality" then count = count + 1 end end
+assert(count == 2, "each written once")
 W.run(0.1)
-assert(#batches == 1 and batches[1].reason == "after combat" and #batches[1].changes == 2, "one batch (sunShafts, shadow quality; maxFPS is outside the Catalog)")
+assert(#batches == 2 and batches[1].reason == "after combat" and #batches[1].changes == 1 and batches[2].reason == "City: Town", "Smart's held value as held, the profile's from a fresh refresh")
 W.setCombat(true)
 ns.Apply.Write("sunShafts", 0)
 ns.Apply.RestoreOriginal()
-assert(ns.Apply.CombatHeld() == nil and W.cvars.sunShafts == "1", "restore works in combat and drops held writes")
+W.clearWrites()
+W.setCombat(false)
+assert(W.cvars.sunShafts == "1" and not W.wrote("sunShafts"), "restore works in combat and drops held writes")
 W.setCombat(false)
 assert(W.cvars.sunShafts == "1")
 
--- Quiet defaults: existing saved notifications go off once; turned on again later, they stay on.
+-- Notifications the player turned on stay on.
 local QUIET = { "announce", "suggest", "smartNotice", "notifyProfile", "chatLog", "chatLogSmart" }
 local loud = {}
 for _, key in ipairs(QUIET) do loud[key] = true end
 W = new({ db = { version = 1, options = W.copy(loud) } })
 W.login()
-for _, key in ipairs(QUIET) do assert(W.ns.db.options[key] == false, key .. " turned off once") end
-local saved = W.ns.db
-for _, key in ipairs(QUIET) do saved.options[key] = true end
-W = new({ db = saved })
-W.login()
-for _, key in ipairs(QUIET) do assert(W.ns.db.options[key] == true, key .. " kept on after the migration") end
+for _, key in ipairs(QUIET) do assert(W.ns.db.options[key] == true, key .. " kept on") end
 
 -- Announce off: a heavy change waits for a loading screen, else lands quietly after 10 minutes out of combat.
 local function heavyWaiting()
@@ -707,8 +731,10 @@ local function heavyWaiting()
 	ns, db = W.ns, W.ns.db
 	W.clearWrites()
 	W.lines = {}
-	ns.Profiles.SetValue("default", "graphicsTextureResolution", 0)
-	assert(not W.wrote("graphicsTextureResolution") and ns.Apply.Pending() == nil, "waits silently")
+	-- Not the player's own edit (that lands at once): a value the refresh finds different.
+	db.profiles.default.values.graphicsTextureResolution = 0
+	ns.Apply.Refresh("location")
+	assert(not W.wrote("graphicsTextureResolution") and ns.Apply.Pending().quiet and #W.lines == 0, "waits silently")
 end
 heavyWaiting()
 W.fire("PLAYER_ENTERING_WORLD", false, true)
@@ -730,15 +756,18 @@ heavyWaiting()
 W.run(601, 1)
 assert(W.cvars.graphicsTextureResolution == "0", "lands after 10 minutes with no loading screen")
 
--- fpsPulse on by default (not part of the quiet migration); smart.ceiling kept only as { fps > 0, t }.
+-- fpsPulse on by default; smart.ceiling kept only as { fps > 0, t }.
 W = new()
 W.login()
 assert(W.ns.db.options.fpsPulse == true and W.ns.db.smart.ceiling == nil)
 W = new({ db = { version = 1, options = { fpsPulse = false }, smart = { ceiling = { fps = 144, t = 1700000000, extra = 1 } } } })
 W.login()
 assert(W.ns.db.options.fpsPulse == false and W.same(W.ns.db.smart.ceiling, { fps = 144, t = 1700000000 }), "kept")
+W = new({ db = { version = 1, smart = { ceiling = { fps = 55, t = 1700000000, confirmed = true } } } })
+W.login()
+assert(W.same(W.ns.db.smart.ceiling, { fps = 55, t = 1700000000, confirmed = true }), "confirmed survives a reload")
 for _, bad in ipairs({ { fps = 0, t = 1 }, { fps = 60 }, { fps = "60", t = 1 }, { fps = 0 / 0, t = 1 }, 5 }) do
-	W = new({ db = { version = 1, migrations = { quietDefaults = true }, options = { fpsPulse = "yes" }, smart = { ceiling = bad } } })
+	W = new({ db = { version = 1, options = { fpsPulse = "yes" }, smart = { ceiling = bad } } })
 	W.login()
 	assert(W.ns.db.smart.ceiling == nil and W.ns.db.options.fpsPulse == true and W.said("repaired"), "bad ceiling dropped")
 end
@@ -821,7 +850,7 @@ P.Hold(town)
 ns.Apply.SetSwitching(false)
 W.lines = {}
 W.slash("profile Fast")
-assert(db.held == town and W.said("Smart Graphics is off; turn it on in /fsg"), "refused, nothing stored")
+assert(db.held == town and W.said("Smart Graphics|r is turned off; turn it on in /fsg"), "refused, nothing stored")
 assert(not P.Hold(nil) and db.held == town)
 ns.Apply.SetSwitching(true)
 W.slash("use Fast")
@@ -830,7 +859,7 @@ P.Hold(town)
 W.slash("restore")
 assert(db.held == nil and P.Held() == nil, "restore releases")
 
--- A hold in combat is the player's action: written at once; heavy settings keep their wait.
+-- A hold in combat is the player's action: written at once, heavy settings too (contract 3).
 W = new()
 W.login()
 W.run(4)
@@ -839,11 +868,8 @@ local combatSet = P.Create("Combat", { graphicsShadowQuality = 1, graphicsTextur
 W.setCombat(true)
 W.slash("profile combat")
 assert(P.Held() == combatSet and W.cvars.graphicsShadowQuality == "1", "written in combat")
-assert(W.cvars.graphicsTextureResolution == "2" and ns.Apply.CombatHeld() == nil, "heavy waits")
+assert(W.cvars.graphicsTextureResolution == "0" and ns.Apply.Pending() == nil, "heavy at once")
 W.setCombat(false)
-W.fire("PLAYER_ENTERING_WORLD", false, true)
-W.run(1)
-assert(W.cvars.graphicsTextureResolution == "0", "heavy lands at the loading screen")
 W.slash("help")
 assert(W.said("profile <name>|auto|toggle <name> %(hold a profile, for macros%)"))
 
@@ -970,5 +996,275 @@ saved.original.ffxAntiAliasingMode = nil
 W = new({ db = saved, cvars = { ffxAntiAliasingMode = "2" } })
 W.login()
 assert(W.ns.db.original.ffxAntiAliasingMode == "2" and W.ns.db.original.RenderScale == saved.original.RenderScale, "an older db gains the new cvar, the rest kept")
+
+-- E1: Eco (global and per place) survives a reload; Core keeps every goal and pace Smart.lua knows.
+GetUnitSpeed = GetUnitSpeed or function() return 0 end
+local FULL = { "Core.lua", "NewsData.lua", "News.lua", "Catalog.lua", "Profiles.lua", "Location.lua", "Apply.lua", "Smart.lua" }
+W = new({ files = FULL })
+W.login()
+for _, goal in ipairs(W.ns.Smart.GOALS) do
+	for _, pace in ipairs(W.ns.Smart.PACES) do
+		local saved = W.copy(W.ns.db)
+		saved.smart.goal, saved.smart.pace, saved.smart.goals = goal.key, pace.key, { raid = goal.key }
+		local R = new({ db = saved, files = FULL })
+		R.login()
+		local s = R.ns.db.smart
+		assert(s.goal == goal.key and s.pace == pace.key and s.goals.raid == goal.key and not R.said("repaired"), goal.key .. "/" .. pace.key .. " survives a reload")
+	end
+end
+
+-- E4: a change in the game's own Options sticks when nothing in the addon sets that setting.
+W = new()
+W.login()
+W.run(4)
+ns, db = W.ns, W.ns.db
+C_CVar.SetCVar("graphicsShadowQuality", "5")
+C_CVar.SetCVar("RenderScale", "1")
+C_CVar.SetCVar("maxFPS", "144")
+W.clearWrites()
+W.mapID, W.zone = 1413, "The Barrens"
+W.fire("ZONE_CHANGED_NEW_AREA")
+W.run(1)
+assert(#W.writes == 0 and W.cvars.graphicsShadowQuality == "5" and W.cvars.RenderScale == "1", "the Options change is kept at the next refresh")
+assert(db.original.graphicsShadowQuality == "5" and db.original.maxFPS == "144", "adopted as the player's own value")
+ns.Profiles.SetValue("default", "graphicsSSAO", 1)
+C_CVar.SetCVar("graphicsSSAO", "4")
+assert(db.original.graphicsSSAO == "3", "a setting Default sets is not adopted")
+ns.Apply.Refresh("location")
+assert(W.cvars.graphicsSSAO == "1", "and the profile's value comes back")
+local R = new({ db = W.copy(db), cvars = { graphicsShadowQuality = "5", RenderScale = "1" } })
+R.login()
+R.run(2)
+assert(R.cvars.graphicsShadowQuality == "5" and R.cvars.RenderScale == "1" and not R.wrote("graphicsShadowQuality"), "and next session")
+-- First login on a machine whose own value is outside the Catalog range: nothing written.
+W = new({ cvars = { graphicsParticleDensity = "0", ResampleQuality = "4" } })
+W.login()
+W.run(2)
+assert(#W.writes == 0 and W.cvars.graphicsParticleDensity == "0" and W.cvars.ResampleQuality == "4", "the player's out-of-range value is not clamped")
+-- Smart mode on: an outside change is not adopted (Smart decides those settings).
+W = new()
+W.ns.Smart = { Enabled = function() return true end, SetEnabled = function() end, State = function() return { status = "holding" } end, Adjust = function(_, v) return v end }
+W.login()
+C_CVar.SetCVar("graphicsShadowQuality", "5")
+assert(W.ns.db.original.graphicsShadowQuality == "3", "not adopted while Smart mode is on")
+
+-- E3: limits and unsupported settings are rediscovered every session.
+W = new()
+W.login()
+W.ignore.vrsValar = "x"
+W.ns.Apply.Write("vrsValar", 2)
+W.ns.Apply.Write("vrsValar", 1)
+W.clamp.sunShafts = 1
+W.ns.Apply.Write("sunShafts", 2)
+assert(W.ns.db.unsupported.vrsValar and W.ns.db.limits.sunShafts == 1)
+local again = new({ db = W.copy(W.ns.db) })
+again.login()
+assert(next(again.ns.db.unsupported) == nil and next(again.ns.db.limits) == nil and next(again.ns.db.limitSides) == nil and not again.said("repaired"), "a refused value is not unsupported next session")
+
+-- E5a: a profile's hidden settings go back to the original in the next session too.
+W = new()
+W.login()
+W.run(4)
+local rich = W.ns.Profiles.Create("Rich", { shadowSoft = 1, groundEffectDensity = 256 })
+W.ns.Profiles.Assign("outdoor", rich)
+assert(W.cvars.shadowSoft == "1" and W.ns.db.overridden.shadowSoft and W.ns.db.overridden.groundEffectDensity)
+local saved = W.copy(W.ns.db)
+saved.locations.outdoor = nil
+saved.overridden.bogus, saved.overridden.graphicsSSAO = true, true
+W = new({ db = saved, cvars = { shadowSoft = "1", groundEffectDensity = "256" } })
+W.login()
+W.run(2)
+assert(W.cvars.shadowSoft == "0" and W.cvars.groundEffectDensity == "64" and next(W.ns.db.overridden) == nil, "back to the original next session")
+assert(W.said("repaired 2 "), "only hidden Catalog cvars are kept in the set")
+
+-- E7: saved values are repaired against the static range, not this session's machine range; newer data is kept.
+W = new({ maxScale = 2.0 })
+W.login()
+local sharp = W.ns.Profiles.Create("Sharp", { RenderScale = 1.5, ffxAntiAliasingMode = 4, graphicsParticleDensity = 1 })
+W.ns.db.profiles[sharp].values.graphicsParticleDensity = 0
+W = new({ db = W.copy(W.ns.db), maxScale = 1.0, aa = { true, false, false } })
+W.login()
+local values = W.ns.Profiles.Get(sharp).values
+assert(values.RenderScale == 1.5 and values.ffxAntiAliasingMode == 4 and values.graphicsParticleDensity == 0 and not W.said("repaired"), "a smaller display does not rewrite the profile")
+assert(W.ns.Profiles.Effective(sharp).RenderScale == 1 and W.ns.Profiles.Effective(sharp).ffxAntiAliasingMode == 2, "clamped at use")
+W = new({ db = { version = 2, profiles = { default = { name = "Default", values = { futureCvar = 3, RenderScale = 0.77 } } } } })
+W.login()
+assert(W.ns.db.version == 2 and W.ns.db.profiles.default.values.futureCvar == 3 and W.ns.db.profiles.default.values.RenderScale == 0.77 and W.said("newer version"), "newer data kept as it is")
+
+-- E20: a value held for a place the player already left is never written; only the current place's refresh lands.
+W = new()
+W.login()
+W.run(4)
+local town = W.ns.Profiles.Create("Town", { graphicsShadowQuality = 1 })
+W.ns.Profiles.Assign("city", town)
+W.setCombat(true)
+W.resting = true
+W.fire("PLAYER_UPDATE_RESTING")
+W.run(4)
+W.resting = false
+W.fire("PLAYER_UPDATE_RESTING")
+W.run(4)
+W.clearWrites()
+W.setCombat(false)
+assert(#W.writes == 0 and W.cvars.graphicsShadowQuality == "3", "the stale held value is dropped")
+
+-- E8: switching off drops a counting-down heavy change and everything held for combat end.
+W = new()
+W.login()
+W.run(4)
+ns, db = W.ns, W.ns.db
+db.options.announce = true
+local spot2 = ns.Profiles.Create("Spot", { graphicsTextureResolution = 0 })
+ns.Profiles.SetOverride("map:1413", "Spot", spot2)
+W.mapID = 1413
+W.fire("ZONE_CHANGED_NEW_AREA")
+W.run(0.5)
+assert(ns.Apply.Pending())
+ns.Apply.SetSwitching(false)
+W.clearWrites()
+W.run(11)
+assert(ns.Apply.Pending() == nil and W.liveTickers() == 0 and #W.writes == 0 and W.cvars.graphicsTextureResolution == "2", "4a: nothing lands after switching off")
+ns.Apply.SetSwitching(true)
+ns.Apply.ApplyPending()
+local cities = ns.Profiles.Create("Cities", { graphicsShadowQuality = 1 })
+ns.Profiles.Assign("city", cities)
+W.setCombat(true)
+W.resting = true
+W.fire("PLAYER_UPDATE_RESTING")
+W.run(4)
+ns.Apply.Write("sunShafts", 2)
+ns.Apply.SetSwitching(false)
+W.clearWrites()
+W.setCombat(false)
+assert(#W.writes == 0 and W.cvars.graphicsShadowQuality ~= "1" and W.cvars.sunShafts == "1", "4b: nothing held lands after switching off")
+-- Switching off turns Smart mode off first, while refreshes still run.
+W = new()
+local order = {}
+local on = true
+W.ns.Smart = {
+	Enabled = function() return on end,
+	SetEnabled = function(v) on = v order[#order + 1] = "smart off, switching " .. tostring(W.ns.db.options.switching) W.ns.Fire("FSG_SMART") end,
+	State = function() return { status = "holding" } end,
+	Adjust = function(_, v) return v end,
+}
+W.login()
+W.ns.Apply.SetSwitching(false)
+assert(order[1] == "smart off, switching true" and W.ns.db.options.switching == false, "Smart mode off first")
+
+-- E10: restore stops Find my best settings first and ends with switching off.
+W = new()
+local stopped
+W.ns.Calibrate = {
+	State = function() return { running = not stopped } end,
+	Stop = function(opts) stopped = opts W.ns.Apply.SetSwitching(true) return true end,
+}
+W.login()
+W.ns.Apply.SetSwitching(false)
+W.slash("restore")
+assert(stopped and stopped.keepOff and W.ns.db.options.switching == false and W.said("put your original settings back and is turned off; turn it on in /fsg"), "Calibrate stopped, switching stays off")
+
+-- E11, E15, E17: use releases a hold through AssignAll; reserved words only as the whole argument; usage lines.
+W = new()
+W.login()
+W.run(4)
+ns, db, P = W.ns, W.ns.db, W.ns.Profiles
+local autoLow, toggleTest, raidP = P.Create("Auto low", { graphicsSSAO = 0 }), P.Create("Toggle test", { graphicsSSAO = 1 }), P.Create("Raid", { graphicsSSAO = 2 })
+P.Hold(raidP)
+assert(P.AssignAll(autoLow) and P.Held() == nil and ns.Apply.Active().profileId == autoLow, "AssignAll releases a held profile")
+W.slash("profile Auto low")
+assert(P.Held() == autoLow, "a name starting with auto")
+W.slash("profile Toggle test")
+assert(P.Held() == toggleTest, "a name starting with toggle")
+W.slash("profile toggle Toggle test")
+assert(P.Held() == nil, "toggle form still works")
+W.lines = {}
+W.slash("use")
+W.slash("profile toggle")
+assert(W.said("Usage: /fsg use <profile name>") and W.said("Usage: /fsg profile toggle <profile name>"))
+ns.Apply.SetSwitching(false)
+W.lines = {}
+W.slash("use Raid")
+assert(W.said("Raid is now used everywhere %(Smart Graphics is turned off, so nothing changes until you turn it on%)") and db.locations.city == raidP)
+W.slash("help")
+for _, word in ipairs({ "goal <", "pace <", "findbest", "| finish", "| stop", "applynow" }) do assert(W.said(word:gsub("%p", "%%%0")), "help lists " .. word) end
+
+-- E13: particle density follows the game's menu: 0..4 Low..Ultra with secondary lighting, else 1..5.
+C_VideoOptions = { IsSecondaryLightingSupported = function() return true end }
+W = new()
+local particles = W.ns.Catalog.Get("graphicsParticleDensity")
+assert(particles.min == 0 and particles.max == 4 and W.ns.Catalog.Format("graphicsParticleDensity", 0) == "Low" and W.ns.Catalog.Format("graphicsParticleDensity", 4) == "Ultra")
+C_VideoOptions = nil
+W = new()
+particles = W.ns.Catalog.Get("graphicsParticleDensity")
+assert(particles.min == 1 and particles.max == 5 and W.ns.Catalog.Format("graphicsParticleDensity", 5) == "Ultra")
+
+-- E21: value names as the game's menu shows them.
+local F = W.ns.Catalog.Format
+assert(F("graphicsPBRLiquidDetail", 0) == "Low" and F("graphicsPBRLiquidDetail", 1) == "High" and F("graphicsPBRLiquidDetail", 2) == "Ultra")
+assert(F("graphicsComputeEffects", 0) == "Low" and F("graphicsComputeEffects", 1) == "Fair" and F("graphicsComputeEffects", 4) == "Ultra")
+assert(F("graphicsTextureResolution", 1) == "Fair" and F("graphicsTextureResolution", 2) == "High")
+assert(F("graphicsLightMode", 0) == "Fair" and F("graphicsLightMode", 3) == "Ultra")
+
+-- E12: selftest says whether the Raid and Battleground graphics set is in use.
+W = new({ cvars = { RAIDsettingsEnabled = "1" } })
+function GetCurrentGraphicsSetting() return 1 end
+W.login()
+W.slash("selftest")
+assert(W.said("selftest: Raid and Battleground graphics set turned on, active now: yes"))
+GetCurrentGraphicsSetting = nil
+
+-- E18: a name cut at 32 bytes never ends in half a letter.
+W = new()
+W.login()
+local cyr = string.rep("\208\175", 17)
+local cut = W.ns.Profiles.Get(W.ns.Profiles.Create("x" .. cyr, {})).name
+assert(#cut == 31 and cut:byte(-1) == 175, "a whole letter dropped, not half")
+assert(W.ns.Cut("abc", 2) == "ab" and W.ns.Cut("a\226\130\172", 3) == "a" and W.ns.Cut("a\226\130\172", 4) == "a\226\130\172")
+local saved = W.copy(W.ns.db)
+saved.profiles.p1.name = "y" .. cyr
+W = new({ db = saved })
+W.login()
+assert(#W.ns.Profiles.Get("p1").name == 31)
+
+-- E19: a seen version the order can't read counts as missing; a broken news table does not stop /fsg whatsnew.
+W = new({ db = { version = 1, news = { seen = "garbage" } }, meta = { Version = "1.0.0" } })
+W.login()
+assert(W.ns.db.news.seen == "1.0.0-beta.2" and W.said("repaired"), "unreadable seen is reset to the baseline")
+W.ns.db.news = "broken"
+W.ns.ShowWhatsNew = function() end
+W.slash("whatsnew")
+
+-- E22: a place added on the parent map covers the maps inside it.
+W = new()
+C_Map.GetMapInfo = function(id) return id == 85 and { parentMapID = 84 } or { parentMapID = 0 } end
+W.login()
+W.run(4)
+local city2 = W.ns.Profiles.Create("Capital", { graphicsSSAO = 1 })
+W.ns.Profiles.SetOverride("map:84", "Stormwind City", city2)
+W.mapID = 85
+W.fire("ZONE_CHANGED")
+W.run(0.5)
+assert(W.ns.Location.Current().parentKey == "map:84" and select(2, W.ns.Location.ProfileFor()) == "place" and W.cvars.graphicsSSAO == "1", "parent override")
+local own = W.ns.Profiles.Create("Own", { graphicsSSAO = 0 })
+W.ns.Profiles.SetOverride("map:85", "Old Town", own)
+assert(W.ns.Location.ProfileFor() == own, "the map's own override wins")
+
+-- E24: use the addon, copy the saved table, load again: no "repaired" line.
+W = new({ meta = { Version = "1.0.0" } })
+W.login()
+W.run(4)
+P = W.ns.Profiles
+local rt = P.Create("Round trip", { RenderScale = 1.35, ffxAntiAliasingMode = 3, shadowSoft = 1, shadowTextureSize = 1024 })
+P.Assign("city", rt)
+P.SetOverride("map:84", "Stormwind City", rt)
+P.Hold(rt)
+W.ns.db.smart.ceiling = { fps = 60, t = 1700000000, confirmed = true }
+W.ns.db.smart.goal, W.ns.db.smart.goals.raid = "eco", "fidelity"
+W.ns.db.options.calibratePos = { point = "TOP", x = 1, y = 2 }
+W.ns.Apply.Write("sunShafts", 2)
+W.fire("PLAYER_LOGOUT")
+local R = new({ db = W.copy(ForeverSmartGraphicsDB), meta = { Version = "1.0.0" } })
+R.login()
+assert(not R.said("repaired") and R.ns.Profiles.Held() == rt and R.ns.db.smart.goal == "eco" and R.ns.db.smart.ceiling.confirmed, "a used saved table loads clean")
 
 io.write("engine_spec: all passed\n")

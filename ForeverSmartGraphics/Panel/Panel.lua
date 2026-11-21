@@ -14,7 +14,7 @@ local N = UI.N
 -- The strip starts right of the round portrait (62 wide at -5): 62 instead of the tab band's 32.
 local STRIP_X, STRIP_Y, STRIP_H, STRIP_PAD, STRIP_RIGHT, STRIP_VALUE_W = 62, 27, 37, 8, 32, 260
 local PORTRAIT = "Interface\\AddOns\\ForeverSmartGraphics\\Media\\portrait"
-local BAR_Y, BAR_H, HEADER_BAR_H, FLASH_FOR = 54, 22, 82, 4
+local BAR_Y, BAR_H, HEADER_BAR_H, FLASH_FOR, SUBTITLE_RIGHT = 54, 22, 82, 4, 8
 local METER_W, METER_H, METER_SPAN = 96, 7, 1.5
 local PAGE_ORDER = { "overview", "profiles", "locations", "smart", "general" }
 local GROUPS = { { header = "CAT_GRAPHICS", pages = { "overview", "profiles", "locations", "smart" } }, { header = "CAT_ADDON", pages = { "general" } } }
@@ -175,12 +175,14 @@ local function chevron(after)
 	return tex
 end
 
--- The value keeps its whole text (up to STRIP_VALUE_W: a 32-letter profile name with " (held)"), so it never runs into
--- the chevron after it.
-local function sizeSegment(seg)
-	local value = math.min(UI.TextWidth(seg.value), STRIP_VALUE_W)
+-- The value keeps its whole text (up to room, else STRIP_VALUE_W: a 32-letter profile name with " (held)"), so it never
+-- runs into the chevron after it; a value cut to its room ends in "..." and seg.cut says so.
+local function sizeSegment(seg, room)
+	local full, chrome = UI.TextWidth(seg.value), STRIP_PAD * 2 + UI.TextWidth(seg.caption) + 6 + 1
+	local value = math.max(0, math.min(full, room and room - chrome or STRIP_VALUE_W))
+	seg.cut = full > value
 	seg.value:SetWidth(value + 1)
-	seg:SetWidth(STRIP_PAD * 2 + UI.TextWidth(seg.caption) + 6 + value + 1)
+	seg:SetWidth(chrome + value)
 end
 
 local function hereTip()
@@ -196,8 +198,9 @@ local function smartTip()
 	local lines = {}
 	if ns.Smart then
 		local state = ns.Smart.State() or {}
-		lines[1] = string.format(L.STATUS, UI.SmartStatus(state))
-		lines[2] = string.format(L.STRIP_GOAL, UI.Goal())
+		if strip.smart.cut then lines[1] = strip.smart.value:GetText() end
+		lines[#lines + 1] = string.format(L.STATUS, UI.SmartStatus(state))
+		lines[#lines + 1] = string.format(L.STRIP_GOAL, math.floor(UI.Goal() + 0.5))
 		if state.cap then lines[#lines + 1] = string.format(L.CAP, state.cap) end
 		local change = UI.ChangeText(state.last)
 		if change then lines[#lines + 1] = string.format(L.LAST, change) end
@@ -209,7 +212,7 @@ end
 local function fpsNow() return math.floor((tonumber(ns.plain(GetFramerate())) or 0) + 0.5) end
 
 local function fpsTip()
-	local lines = { string.format(L.STRIP_FPS_TIP, fpsNow(), UI.Goal()) }
+	local lines = { string.format(L.STRIP_FPS_TIP, fpsNow(), math.floor(UI.Goal() + 0.5)) }
 	local state = ns.Smart and ns.Smart.State()
 	if state and state.cap then lines[2] = string.format(L.CAP, state.cap) end
 	return { title = L.TITLE, lines = lines, side = "left" }
@@ -234,11 +237,15 @@ local function drawStrip()
 	end
 	strip.smart.value:SetText(text)
 	strip.smart.value:SetFontObject((smartOn or calibrating()) and "GameFontHighlight" or "GameFontDisable")
-	for _, seg in ipairs({ strip.here, strip.profile, strip.smart }) do sizeSegment(seg) end
 	local fps, goal = fpsNow(), UI.Goal()
 	strip.fps:SetText(string.format(L.FPS, fps))
 	strip.fps:SetTextColor(STRIP_COLORS[UI.FpsColor(fps, goal)]:GetRGB())
-	strip.target:SetText(string.format(L.STRIP_TARGET, goal))
+	strip.target:SetText(string.format(L.STRIP_TARGET, math.floor(goal + 0.5)))
+	sizeSegment(strip.here)
+	sizeSegment(strip.profile)
+	-- Smart gets what is left between the Profile segment and the meter.
+	local used = strip.here:GetWidth() + strip.profile:GetWidth() + 2 * ((strip.chevron:GetWidth() or 0) + 4)
+	sizeSegment(strip.smart, strip:GetWidth() - used - (UI.TextWidth(strip.fps) + 2 + 10 + METER_W) - STRIP_PAD)
 	strip.fill:SetWidth(math.max(1, METER_W * math.min(1, fps / math.max(1, goal * METER_SPAN))))
 end
 
@@ -258,7 +265,8 @@ local function buildStrip()
 	end, profileTip)
 	strip.profile:SetPoint("LEFT", chevron(strip.here), "RIGHT", 2, 0)
 	strip.smart = segment(L.STRIP_SMART, function() UI.OpenPanel("smart") end, smartTip)
-	strip.smart:SetPoint("LEFT", chevron(strip.profile), "RIGHT", 2, 0)
+	strip.chevron = chevron(strip.profile)
+	strip.smart:SetPoint("LEFT", strip.chevron, "RIGHT", 2, 0)
 	strip.fps = strip:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
 	strip.fps:SetPoint("RIGHT", -2, 0)
 	strip.fps:SetJustifyH("RIGHT")
@@ -403,8 +411,6 @@ function UI.SelectPage(key, id)
 	if main:IsShown() then main:Refresh() end
 end
 
-UI.SelectCategory = UI.SelectPage
-
 function UI.Selection() return sel end
 
 local function build()
@@ -426,6 +432,8 @@ local function build()
 	canvas.title:SetJustifyH("LEFT")
 	canvas.subtitle = canvas:CreateFontString(nil, "OVERLAY", "GameFontDisable")
 	canvas.subtitle:SetPoint("LEFT", canvas.title, "RIGHT", 10, -2)
+	canvas.subtitle:SetJustifyH("LEFT")
+	canvas.subtitle:SetWordWrap(false)
 	canvas.divider = canvas:CreateTexture(nil, "ARTWORK")
 	canvas.divider:SetAtlas("Options_HorizontalDivider", true)
 	scroll = CreateFrame("ScrollFrame", nil, canvas)
@@ -443,7 +451,13 @@ local function build()
 		drawStrip()
 		local spec = pageOf(sel.key)
 		canvas.title:SetText(spec.title(sel))
-		canvas.subtitle:SetText(spec.subtitle and spec.subtitle(sel) or "")
+		-- The subtitle ends at the canvas edge: too long, it gives way to its short form (subtitle's second return).
+		local subtitle, short = "", nil
+		if spec.subtitle then subtitle, short = spec.subtitle(sel) end
+		local room = N.CONTAINER_W - N.TITLE_X - UI.TextWidth(canvas.title) - 10 - SUBTITLE_RIGHT
+		canvas.subtitle:SetWidth(math.max(1, room))
+		canvas.subtitle:SetText(subtitle)
+		if short and UI.TextWidth(canvas.subtitle) > room then canvas.subtitle:SetText(short) end
 		local nodes = spec.refresh(contentOf(sel.key), main, sel, bars[sel.key]) or {}
 		nodes[#nodes + 1] = UI.Node(main, main.closeButton, function() UI.CloseAll() end)
 		drawCategories(nodes)
@@ -660,15 +674,15 @@ end
 local function ago(t)
 	local seconds = GetTime() - t
 	if seconds < 10 then return L.AGO_NOW end
-	if seconds < 60 then return string.format(L.AGO_SECONDS, seconds) end
-	return string.format(L.AGO_MINUTES, seconds / 60)
+	if seconds < 60 then return string.format(L.AGO_SECONDS, math.floor(seconds)) end
+	return string.format(L.AGO_MINUTES, math.floor(seconds / 60))
 end
 
 local function fpsTip(self)
 	local active = ns.Apply.Active() or {}
 	local loc = active.loc or {}
 	local lines = { string.format(L.FPS_TIP_PLACE, loc.name or L.UNKNOWN_PLACE, ns.Location.LABELS[loc.key] or L.UNKNOWN_PLACE), string.format(L.FPS_TIP_PROFILE, UI.ActiveProfileName(active)) }
-	if ns.Smart and ns.Smart.Enabled() then lines[#lines + 1] = string.format(L.FPS_TIP_SMART, UI.SmartStatus(ns.Smart.State()), fpsGoal()) end
+	if ns.Smart and ns.Smart.Enabled() then lines[#lines + 1] = string.format(L.FPS_TIP_SMART, UI.SmartStatus(ns.Smart.State()), math.floor(fpsGoal() + 0.5)) end
 	if #batches > 0 then
 		lines[#lines + 1] = { text = L.FPS_TIP_CHANGES, color = { NORMAL_FONT_COLOR:GetRGB() } }
 		local shown = 0
@@ -866,5 +880,4 @@ function UI.ShowMessage(text, buttons)
 end
 
 -- After combat: offer to open again what combat closed.
-function UI.OfferResume(resume) UI.ShowMessage(resume.text, { { L.RESUME, resume.fn }, { L.NOT_NOW } }) end
 

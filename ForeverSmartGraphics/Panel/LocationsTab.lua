@@ -87,7 +87,13 @@ local function addCurrent()
 	refresh()
 end
 
+local function calibrating()
+	local state = ns.Calibrate and ns.Calibrate.State()
+	return state and state.running
+end
+
 local function toggleSwitching()
+	if calibrating() then return end
 	ns.Apply.SetSwitching(not ns.db.options.switching)
 	refresh()
 end
@@ -98,13 +104,12 @@ local function removePlace(key)
 	refresh()
 end
 
--- Smart goal per location type: Default (the Goal on the Smart mode page) or one of the goals; Pace is global. Greyed
+-- Smart goal per location type: Same as Smart mode (the Goal on the Smart mode page) or one of the goals; Pace is global. Greyed
 -- (still showing its value) while Smart mode is off.
 local function smartOn() return ns.Smart and ns.Smart.Enabled() end
 
 local function modeChoices()
-	local global = UI.SmartChoice("goal")
-	local entries = { { id = false, name = string.format(L.MODE_DEFAULT, global and global.name or L.DEFAULT) } }
+	local entries = { { id = false, name = L.MODE_DEFAULT } }
 	for _, entry in ipairs(UI.SmartEntries("goal")) do entries[#entries + 1] = entry end
 	return entries
 end
@@ -229,7 +234,10 @@ local function refreshPage(content)
 	flow:Start()
 	flow:Add(content.toggle, N.ROW_H)
 	content.toggle.control:Set(switching)
-	nodes[1] = UI.Node(window, content.toggle, toggleSwitching, { cursorX = N.LABEL_X - 6, onFocus = UI.RowFocus(content.toggle), tipRegion = content.toggle.tipAnchor, tip = { title = L.SWITCHING, lines = { L.SWITCHING_TIP }, side = "above" } })
+	-- Find my best settings needs it on while it runs.
+	local busy = calibrating()
+	UI.SetRowEnabled(content.toggle, not busy)
+	if not busy then nodes[1] = UI.Node(window, content.toggle, toggleSwitching, { cursorX = N.LABEL_X - 6, onFocus = UI.RowFocus(content.toggle), tipRegion = content.toggle.tipAnchor, tip = { title = L.SWITCHING, lines = { L.SWITCHING_TIP }, side = "above" } }) end
 
 	flow:Add(content.typeSection, N.SECTION_H, 0)
 	local styleOn = smartOn()
@@ -252,12 +260,22 @@ local function refreshPage(content)
 			row.second:SetEnabledState(switching and styleOn)
 		end
 		if switching then
-			nodes[#nodes + 1] = choiceNode(row, function(dir) return stepType(key, dir) end, { title = label, lines = { string.format(L.TYPE_TIP, label:lower()), UI.ByMode(L.CHOICE_TIP, L.CHOICE_TIP_MOUSE) }, side = "above" })
-			if row.second then
-				if styleOn then
-					local tip = { title = label, lines = { string.format(L.GOAL_TYPE_TIP, label:lower()) }, side = "above" }
-					nodes[#nodes + 1] = UI.Node(window, row.second.button, function() openLocationMode(row, key) end, { cursorX = -6, tip = tip, styleKey = key, onDir = function(dir) return stepLocationMode(key, dir) end })
-				end
+			-- Y jumps to the row's Smart goal, so a pad reaches it without stepping the profile.
+			local goalNode
+			local toGoal = row.second and styleOn and {
+				prompts = { { "PAD4", L.COLUMN_STYLE } },
+				onKey = function(pressed)
+					if pressed ~= "PAD4" then return end
+					window:Focus(goalNode)
+					return true
+				end,
+			}
+			local lines = { string.format(L.TYPE_TIP, label:lower()), UI.ByMode(L.CHOICE_TIP, L.CHOICE_TIP_MOUSE) }
+			nodes[#nodes + 1] = choiceNode(row, function(dir) return stepType(key, dir) end, { title = label, lines = lines, actions = toGoal and { { "PAD4", L.COLUMN_STYLE } } or nil, side = "above" }, toGoal or nil)
+			if toGoal then
+				local tip = { title = label, lines = { string.format(L.GOAL_TYPE_TIP, label:lower()) }, side = "above" }
+				goalNode = UI.Node(window, row.second.button, function() openLocationMode(row, key) end, { cursorX = -6, tip = tip, styleKey = key, onDir = function(dir) return stepLocationMode(key, dir) end })
+				nodes[#nodes + 1] = goalNode
 			end
 		end
 	end
@@ -278,10 +296,9 @@ local function refreshPage(content)
 		UI.SetRowEnabled(row, switching)
 		row.remove:SetEnabled(switching)
 		row.onClick = function() openPlace(row, key) end
-		row.onRightClick = function() removePlace(key) end
-		row.remove.action = row.onRightClick
+		row.remove.action = function() removePlace(key) end
 		if switching then
-			nodes[#nodes + 1] = choiceNode(row, function(dir) return stepPlace(key, dir) end, { title = item.name, lines = { string.format(L.PLACE_TIP, item.name), UI.ByMode(L.CHOICE_TIP, L.CHOICE_TIP_MOUSE) }, actions = { { "PAD3", L.REMOVE } }, mouse = { L.RIGHT_REMOVE }, side = "above" }, {
+			nodes[#nodes + 1] = choiceNode(row, function(dir) return stepPlace(key, dir) end, { title = item.name, lines = { string.format(L.PLACE_TIP, item.name), UI.ByMode(L.CHOICE_TIP, L.CHOICE_TIP_MOUSE) }, actions = { { "PAD3", L.REMOVE } }, side = "above" }, {
 				prompts = { { "PAD3", L.REMOVE } },
 				placeKey = key,
 				onKey = function(pressed)
@@ -299,9 +316,10 @@ local function refreshPage(content)
 	addButton:SetText(string.format(L.ADD_THIS_PLACE, loc.name or L.UNKNOWN_PLACE))
 	addButton:SetWidth((addButton:GetTextWidth() or 0) + 24)
 	addButton:SetMotionScriptsWhileDisabled(true)
-	addButton:SetEnabled(switching and loc.overrideKey ~= nil and not added)
+	local canAdd = switching and loc.overrideKey ~= nil and not added
+	addButton:SetEnabled(canAdd)
 	flow:Add(content.add, N.BUTTON_H)
-	nodes[#nodes + 1] = UI.Node(window, addButton, addCurrent, { tip = { title = addButton:GetText(), lines = { added and L.PLACE_ADDED or L.ADD_PLACE_TIP }, side = "right" } })
+	if canAdd then nodes[#nodes + 1] = UI.Node(window, addButton, addCurrent, { tip = { title = addButton:GetText(), lines = { L.ADD_PLACE_TIP }, side = "right" } }) end
 	flow:Finish()
 	return nodes
 end

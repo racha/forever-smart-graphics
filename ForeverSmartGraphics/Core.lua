@@ -14,7 +14,6 @@ local VERSION, DEBUG_CAP = 1, 500
 local PREFIX = "|cff66ccffSmart Graphics|r "
 local NONE = {}
 
-ns.VERSION = VERSION
 ns.commands = {}
 
 local handlers, run = {}, nil
@@ -46,7 +45,7 @@ function run(msg, fn, ...)
 	if ok then return end
 
 	ns.debug("%s listener error: %s", msg, tostring(err))
-	if not errorTold[fn] then ns.log("an error in " .. msg .. " was skipped — please /reload and report: " .. tostring(err)) end
+	if not errorTold[fn] then ns.log("an error in " .. msg .. " was skipped. Please /reload and report: " .. tostring(err)) end
 	errorTold[fn] = true
 end
 
@@ -101,7 +100,7 @@ function ns.OnBlocked(event, addon, func)
 	if addon ~= addonName or blockedTold then return end
 
 	blockedTold = true
-	ns.log("Blizzard blocked " .. tostring(func) .. " — please /reload and report")
+	ns.log("Blizzard blocked " .. tostring(func) .. ". Please /reload and report")
 end
 
 -- Replaced by Panel.lua; the compartment globals too.
@@ -119,10 +118,6 @@ ns.On("PLAYER_REGEN_ENABLED", function() ns.Fire("FSG_COMBAT_END") end)
 ns.On("ADDON_ACTION_BLOCKED", function(addon, func) ns.OnBlocked("ADDON_ACTION_BLOCKED", addon, func) end)
 ns.On("ADDON_ACTION_FORBIDDEN", function(addon, func) ns.OnBlocked("ADDON_ACTION_FORBIDDEN", addon, func) end)
 
--- Migrations keyed by the version they upgrade to; each runs once, on a repaired db.
-local MIGRATIONS = {}
-local OLD_FLOOR = 0.6
-
 local function asTable(value) return type(value) == "table" and value or {} end
 -- value - value is NaN for NaN and for an infinity.
 local function finite(value) return type(value) == "number" and value - value == 0 end
@@ -133,19 +128,26 @@ ns.SMART_TARGET, ns.SMART_FLOOR = { 20, 240, 60 }, { 0.33, 1.0, 0.75 }
 ns.SMART_SCALE_MAX = { 1.0, 2.0, 1.0 }
 local LOCATION_KEYS = { "city", "outdoor", "dungeon", "raid", "battleground", "arena" }
 local OVERRIDE_PATTERNS = { "^map:%d+$", "^instance:%d+$" }
--- Not in the Catalog (never in a profile or preset) but written by Apply or Smart's Efficient mode, so restorable.
+-- Not in the Catalog (never in a profile or preset) but written by Apply, Smart's Eco goal and Find my best settings,
+-- so restorable.
 local EXTRA_CVARS = { "useTargetFPS", "maxFPS", "useMaxFPS" }
-local GOALS = { fps = true, balanced = true, fidelity = true }
+ns.EXTRA_CVARS = EXTRA_CVARS
+-- Smart.lua's GOALS and PACES keys; engine_spec checks that both lists still agree.
+local GOALS = { fps = true, balanced = true, fidelity = true, eco = true }
 local PACES = { aggressive = true, balanced = true, smooth = true }
 local DEFAULT_GOAL, DEFAULT_PACE = "balanced", "balanced"
--- The five old styles as goal + pace ("quality" was Fidelity's first name).
-local OLD_MODES = {
-	balanced = { "balanced", "balanced" }, smooth = { "balanced", "smooth" }, performance = { "fps", "aggressive" },
-	fidelity = { "fidelity", "balanced" }, quality = { "fidelity", "balanced" }, efficient = { "balanced", "balanced" },
-}
-local FRAME_CAP = { "maxFPS", "useMaxFPS" }
 local NOTIFICATIONS = { "announce", "suggest", "smartNotice", "notifyProfile", "chatLog", "chatLogSmart" }
-local restoreFrameCap = false
+local NAME_MAX = 32
+
+-- text cut to max bytes, without a letter whose UTF-8 bytes the cut split.
+function ns.Cut(text, max)
+	text = text:sub(1, max)
+	local lead = text:find("[\192-\255][\128-\191]*$")
+	if not lead then return text end
+	local byte = text:byte(lead)
+	local need = byte >= 240 and 4 or byte >= 224 and 3 or 2
+	return #text - lead + 1 < need and text:sub(1, lead - 1) or text
+end
 
 local function overrideKey(key)
 	if type(key) ~= "string" then return false end
@@ -155,19 +157,20 @@ local function overrideKey(key)
 	return false
 end
 
--- Keeps known cvars on their Catalog grid; drops the rest.
+-- Keeps known cvars on their Catalog grid inside the static range (this machine's own range applies at use); drops
+-- the rest.
 local function repairValues(values, path, fix)
 	local out = {}
 	for cvar, value in pairs(asTable(values)) do
-		local clamped = type(cvar) == "string" and ns.Catalog.Clamp(cvar, tonumber(value))
-		local entry = clamped and ns.Catalog.Get(cvar)
-		if entry then out[entry.cvar] = clamped end
-		if clamped ~= value then fix(path .. "." .. tostring(cvar)) end
+		local kept = type(cvar) == "string" and ns.Catalog.Repair(cvar, tonumber(value))
+		local entry = kept and ns.Catalog.Get(cvar)
+		if entry then out[entry.cvar] = kept end
+		if kept ~= value then fix(path .. "." .. tostring(cvar)) end
 	end
 	return out
 end
 
-local function repairProfiles(db, fix)
+local function repairProfiles(db, fix, newer)
 	local profiles = {}
 	for id, profile in pairs(db.profiles) do
 		if type(id) ~= "string" or type(profile) ~= "table" then
@@ -175,7 +178,7 @@ local function repairProfiles(db, fix)
 		else
 			local name = type(profile.name) == "string" and profile.name:match("^%s*(.-)%s*$") or ""
 			if name == "" then name = id == "default" and "Default" or id end
-			profiles[id] = { id = id, name = name:sub(1, 32), values = repairValues(profile.values, "profiles." .. id, fix) }
+			profiles[id] = { id = id, name = ns.Cut(name, NAME_MAX), values = newer and asTable(profile.values) or repairValues(profile.values, "profiles." .. id, fix) }
 		end
 	end
 	if not profiles.default then fix("profiles.default") end
@@ -227,27 +230,6 @@ local function repairMappings(db, fix)
 	end
 end
 
-local function repairLearned(learned, fix)
-	local out = {}
-	for key, entry in pairs(asTable(learned)) do
-		if type(key) ~= "string" or type(entry) ~= "table" then
-			fix("smart.learned." .. tostring(key))
-		else
-			local path, gains = "smart.learned." .. key, {}
-			for cvar, gain in pairs(asTable(entry.gains)) do
-				local known = type(cvar) == "string" and ns.Catalog.Get(cvar)
-				if known and type(gain) == "table" and finite(gain.ema) and finite(gain.n) and gain.n >= 0 then
-					gains[known.cvar] = { ema = gain.ema, n = math.floor(gain.n) }
-				else
-					fix(path .. ".gains." .. tostring(cvar))
-				end
-			end
-			out[key] = { values = repairValues(entry.values, path, fix), gains = gains, t = finite(entry.t) and entry.t or 0 }
-		end
-	end
-	return out
-end
-
 local function repairSmart(db, fix)
 	local smart = asTable(db.smart)
 	local target, floor = ns.SMART_TARGET, ns.SMART_FLOOR
@@ -256,19 +238,6 @@ local function repairSmart(db, fix)
 	smart.scaleFloor = within(smart.scaleFloor, floor[1], floor[2], floor[3])
 	local top = ns.SMART_SCALE_MAX
 	smart.scaleMax = within(smart.scaleMax, top[1], top[2], top[3])
-	smart.learned = repairLearned(smart.learned, fix)
-	-- Once: the old style (and per-place styles) become goal + pace. Efficient's frame cap goes back to the original.
-	if not db.migrations.goalPace then
-		local old, goals = OLD_MODES[smart.mode], asTable(smart.goals)
-		if old and smart.goal == nil then smart.goal, smart.pace = old[1], smart.pace or old[2] end
-		restoreFrameCap = smart.mode == "efficient"
-		for key, mode in pairs(asTable(smart.modes)) do
-			if OLD_MODES[mode] and goals[key] == nil then goals[key] = OLD_MODES[mode][1] end
-			if mode == "efficient" then restoreFrameCap = true end
-		end
-		smart.goals, smart.mode, smart.modes = goals, nil, nil
-		db.migrations.goalPace = true
-	end
 	if smart.goal ~= nil and not GOALS[smart.goal] then fix("smart.goal") end
 	smart.goal = GOALS[smart.goal] and smart.goal or DEFAULT_GOAL
 	if smart.pace ~= nil and not PACES[smart.pace] then fix("smart.pace") end
@@ -283,7 +252,7 @@ local function repairSmart(db, fix)
 	local ceiling = smart.ceiling
 	local validCeiling = type(ceiling) == "table" and finite(ceiling.fps) and ceiling.fps > 0 and finite(ceiling.t)
 	if ceiling ~= nil and not validCeiling then fix("smart.ceiling") end
-	smart.ceiling = validCeiling and { fps = ceiling.fps, t = ceiling.t } or nil
+	smart.ceiling = validCeiling and { fps = ceiling.fps, t = ceiling.t, confirmed = ceiling.confirmed == true or nil } or nil
 	-- Smart's own stores: only their shape is repaired here.
 	for _, key in ipairs({ "areas", "gains" }) do
 		if smart[key] ~= nil and type(smart[key]) ~= "table" then fix("smart." .. key) end
@@ -320,9 +289,11 @@ local function repairNews(db, fresh, fix)
 	local news = db.news
 	if news ~= nil and type(news) ~= "table" then fix("news") end
 	news = asTable(news)
-	if news.seen ~= nil and type(news.seen) ~= "string" then fix("news.seen") end
+	-- A seen the version order can't read would hide every update for good: it counts as missing.
+	local valid = ns.News.Compare(news.seen, news.seen) ~= nil
+	if news.seen ~= nil and not valid then fix("news.seen") end
 	if news.never ~= nil and news.never ~= true then fix("news.never") end
-	local seen = type(news.seen) == "string" and news.seen or (fresh and running or NEWS_BASELINE)
+	local seen = valid and news.seen or (fresh and running or NEWS_BASELINE)
 	db.news = { seen = seen, never = news.never == true or nil }
 end
 
@@ -332,10 +303,13 @@ local function loadDB()
 	local fresh = next(db) == nil
 	local version = db.version
 	if type(version) ~= "number" or version < 1 or version % 1 ~= 0 then db.version = fresh and VERSION or 1 end
+	-- A newer version's profile values may use cvars or ranges this one doesn't know: kept as they are.
+	local newer = db.version > VERSION
+	if newer then ns.log("these settings were saved by a newer version of Smart Graphics; some may be ignored") end
 
 	local fixes = {}
 	local function fix(what) fixes[#fixes + 1] = what end
-	for _, key in ipairs({ "options", "profiles", "locations", "overrides", "smart", "unsupported", "limits", "limitSides", "debugLog", "migrations" }) do
+	for _, key in ipairs({ "options", "profiles", "locations", "overrides", "smart", "overridden", "debugLog" }) do
 		if db[key] ~= nil and type(db[key]) ~= "table" then fix(key) end
 		db[key] = asTable(db[key])
 	end
@@ -343,13 +317,8 @@ local function loadDB()
 	local options = db.options
 	options.switching = bool(options.switching, true)
 	options.debug = options.debug == true
-	-- Every notification is off until the player turns it on. Once: saved data from before this rule goes quiet too
-	-- (pre-release, so nobody chose these yet).
-	for _, key in ipairs(NOTIFICATIONS) do
-		if not db.migrations.quietDefaults then options[key] = false end
-		options[key] = bool(options[key], false)
-	end
-	db.migrations.quietDefaults = true
+	-- Every notification is off until the player turns it on.
+	for _, key in ipairs(NOTIFICATIONS) do options[key] = bool(options[key], false) end
 	-- The minimap FPS box pulsing on a change: the one quiet signal, on by default.
 	options.fpsPulse = bool(options.fpsPulse, true)
 	local minimap = asTable(options.minimap)
@@ -363,60 +332,34 @@ local function loadDB()
 	for i = math.max(1, #log - DEBUG_CAP + 1), #log do if type(log[i]) == "string" then kept[#kept + 1] = log[i] end end
 	db.debugLog = kept
 
-	local unsupported = {}
-	for cvar, on in pairs(db.unsupported) do
-		local entry = on == true and type(cvar) == "string" and ns.Catalog.Get(cvar)
-		if entry then unsupported[entry.cvar] = true else fix("unsupported." .. tostring(cvar)) end
-	end
-	db.unsupported = unsupported
+	-- What this machine refused or capped is found again every session: a driver, a display or a window size may
+	-- differ from the last one.
+	db.unsupported, db.limits, db.limitSides = {}, {}, {}
 
-	-- Before any Clamp below: the limits cap profile values.
-	local limits, sides = {}, {}
-	for cvar, limit in pairs(db.limits) do
-		local entry = type(cvar) == "string" and finite(limit) and ns.Catalog.Get(cvar)
-		if entry then
-			limits[entry.cvar] = limit
-			sides[entry.cvar] = db.limitSides[cvar] == "min" and "min" or "max"
-		else
-			fix("limits." .. tostring(cvar))
-		end
+	local overridden = {}
+	for cvar, on in pairs(db.overridden) do
+		local entry = on == true and ns.Catalog.Get(cvar)
+		if entry and entry.group == "hidden" then overridden[entry.cvar] = true else fix("overridden." .. tostring(cvar)) end
 	end
-	db.limits, db.limitSides = limits, sides
+	db.overridden = overridden
 
 	captureOriginal(db)
-	repairProfiles(db, fix)
+	repairProfiles(db, fix, newer)
 	repairMappings(db, fix)
 	repairSmart(db, fix)
 	repairNews(db, fresh, fix)
-	-- The default floor went from 60% to 75%: move only a floor still at the old default, once, so a 60% the
-	-- player picks afterwards stays.
-	if not db.migrations.floor75 and math.abs(db.smart.scaleFloor - OLD_FLOOR) < 1e-6 then db.smart.scaleFloor = ns.SMART_FLOOR[3] end
-	db.migrations.floor75 = true
-
-	if db.version > VERSION then
-		ns.log("these settings were saved by a newer version of Smart Graphics; some may be ignored")
-	else
-		for v = db.version + 1, VERSION do MIGRATIONS[v](db) end
-		db.version = VERSION
-	end
+	if not newer then db.version = VERSION end
 	ForeverSmartGraphicsDB = db
 	-- A first install builds every table from nothing: that's not a repair.
-	return db, fresh and {} or fixes
+	return db, fresh and {} or fixes, fresh
 end
 
 ns.On("ADDON_LOADED", function(name)
 	if name ~= addonName then return end
 
-	local db, fixes = loadDB()
+	local db, fixes, fresh = loadDB()
 	ns.db = db
-	-- Not a user action: in combat Apply holds it for combat end like any other automatic write.
-	if restoreFrameCap and ns.Apply then
-		for _, cvar in ipairs(FRAME_CAP) do
-			local value = tonumber(db.original[cvar])
-			if value and tonumber(ns.Get(cvar)) ~= value then ns.Apply.Write(cvar, value, "Restore original") end
-		end
-	end
-	restoreFrameCap = false
+	if fresh then ns.log("is ready. Type /fsg to open it.") end
 	for _, what in ipairs(fixes) do ns.debug("db repaired %s", what) end
 	if #fixes > 0 then ns.log(string.format("repaired %d damaged saved setting%s", #fixes, #fixes == 1 and "" or "s")) end
 	ns.Fire("FSG_READY")
@@ -429,14 +372,17 @@ ns.On("PLAYER_LOGOUT", function()
 end)
 
 local HELP = "/fsg opens the window (so do the addon compartment and the minimap button). Commands: status"
-	.. " | use <profile name> (that profile everywhere) | profile <name>|auto|toggle <name> (hold a profile, for macros) | restore (your original settings, switching off) | applynow (a waiting texture change)"
-	.. " | smart on|off | target <fps> | floor <percent> | maxscale <percent> | log on|off (settings changes in chat) | log smart on|off (Smart mode steps too) | whatsnew (what changed in this version) | debug on|off | selftest | help"
+	.. " | use <profile name> (that profile everywhere) | profile <name>|auto|toggle <name> (hold a profile, for macros)"
+	.. " | restore (your original settings; Forever Smart Graphics turns off) | applynow (a waiting texture change)"
+	.. " | smart on|off | goal <fps|balanced|fidelity|eco> | goal <location> <goal|default> | pace <aggressive|balanced|smooth>"
+	.. " | target <fps> | floor <percent> | maxscale <percent> | findbest <fps> | finish | stop (Find my best settings)"
+	.. " | log on|off (settings changes in chat) | log smart on|off (Smart mode steps too) | whatsnew (what changed in this version) | debug on|off | selftest | help"
 
 function ns.commands.help() ns.log(HELP) end
 
 function ns.commands.whatsnew()
 	local news = ns.db.news
-	if news and news.never then
+	if type(news) == "table" and news.never then
 		news.never = nil
 		ns.log("What's new is on again: it opens after each update.")
 	end
@@ -469,7 +415,6 @@ local function safe(fn, ...)
 	if not ok then return "error: " .. tostring(a) end
 	return tostring(a)
 end
-ns.safe = safe
 
 function ns.commands.selftest()
 	ns.db.options.debug = true
@@ -492,6 +437,9 @@ function ns.commands.selftest()
 	add("location %s (%s, %s), instance type %s, difficulty %s", tostring(loc.name), loc.key, loc.overrideKey, tostring(loc.instanceType), tostring(loc.difficultyID))
 	local active = ns.Apply.Active()
 	add("profile %s (%s), switching %s, pending %s", active.profileName, active.source, tostring(ns.db.options.switching), ns.Apply.Pending() and "yes" or "no")
+	local raidOn, set = ns.Get("RAIDsettingsEnabled"), safe(GetCurrentGraphicsSetting)
+	local active = set == "1" and "yes" or set == "0" and "no" or set
+	add("Raid and Battleground graphics set %s, active now: %s", raidOn == "1" and "turned on" or raidOn == "0" and "turned off" or "n/a", active)
 	add("smart %s, window %s", ns.Smart and safe(function() return ns.Smart.State().status end) or "not loaded", ns.UI and ns.UI.Main and "loaded" or "not loaded")
 	ns.log("selftest: the debug log is on (/fsg debug off to stop). For a taint check type /console taintLog 2, then /reload.")
 end

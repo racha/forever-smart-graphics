@@ -84,12 +84,14 @@ function C_Timer.NewTicker(d, fn)
 end
 
 -- frames
+W.OWN = { SetEnabledState = true, SetFocused = true, SetOpen = true, Paint = true }
 local Obj = {}
 Obj.__index = function(self, k)
 	local v = rawget(Obj, k)
 	if v ~= nil then return v end
-	-- Unknown WoW methods are no-ops; lowercase fields and the panel's own On* hooks stay nil until set.
-	if type(k) == "string" and k:match("^%u") and not k:match("^On") then return function() end end
+	-- Unknown WoW methods are no-ops; lowercase fields and the panel's own On* hooks stay nil until set. The controls'
+	-- own methods are not WoW's: a frame without them must not seem to have them (a greyed checkbox stays greyed).
+	if type(k) == "string" and k:match("^%u") and not k:match("^On") and not W.OWN[k] then return function() end end
 end
 local function new(kind, parent)
 	return setmetatable({ kind = kind, parent = parent, shown = true, scripts = {}, hooks = {}, w = 0, h = 0, x = 0, y = 0, text = "" }, Obj)
@@ -299,6 +301,9 @@ function W.press(window, key)
 	window:Fire("OnGamePadButtonUp", key)
 end
 
-function W.key(window, key) window:Fire("OnKeyDown", key) end
+function W.key(window, key)
+	window:Fire("OnKeyDown", key)
+	window:Fire("OnKeyUp", key)
+end
 
 return W

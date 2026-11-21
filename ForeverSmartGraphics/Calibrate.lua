@@ -3,11 +3,12 @@
 -- conservative result of all scenes as one static profile used everywhere. Nothing changes after that.
 --
 -- API (ns.Calibrate):
---   Start(target) -> true | false, reason    Finish() -> profile id | nil, reason    Stop() -> true | false
+--   Start(target) -> true | false, reason    Finish() -> profile id | nil, reason
+--   Stop(opts) -> true | false; opts.keepOff: the caller (Restore original) leaves switching off
 --   State() -> { running, target, scenes = { { locKey, label, values, fpsP10, seconds, done }, ... },
 --               current = { locKey, label, status = "searching"|"holding"|"paused" (combat)|"done", seconds } | nil, ready, hint,
 --               changes = { { cvar, from, to, t }, ... } (last 6 writes, newest first), last = changes[1] | nil }
--- Stop and Finish leave smart mode off.
+-- Stop and Finish leave smart mode off. The game's own Target FPS is off while a run is active.
 -- Message FSG_CALIBRATE(state) on start, every sampled second, scene changes, finish and stop.
 -- Uses Smart's bucket sampler and ladder (ns.Smart._Listen/_PickLower/_PickRaise/_IsKnob/_Current/_Fail): each scene
 -- walks down the ladder until the target holds, and a raise undoes the last rung.
@@ -17,9 +18,11 @@ local Calibrate = {}
 ns.Calibrate = Calibrate
 
 local RING, LOWER_BUCKETS, RAISE_BUCKETS, HOLD_BUCKETS = 20, 2, 8, 20
-local RAISE_AT, P10 = 1.08, 0.1
+-- HOLD_AT: a display or frame cap at the target reads a little under it (59.94 at 60) and still holds.
+local RAISE_AT, HOLD_AT, P10 = 1.08, 0.97, 0.1
 local SCENE_MAX, MIN_SECONDS, SCENE_WARM, CHANGE_GAP = 120, 30, 3, 3
 local TARGET_MIN, TARGET_MAX, READY_SCENES, CHANGES = 20, 240, 2, 6
+local REASON, TARGET_FPS = "Find my best settings", "useTargetFPS"
 local HINT_SEARCHING = "Move around here for about a minute"
 local HINT_DONE = "Done here. Now go to the open world or a city"
 local HINT_READY = "Ready: press Finish or visit another kind of place"
@@ -66,7 +69,7 @@ end
 
 -- A write held for combat end (false, "combat") is not a failure.
 local function write(cvar, value)
-	local ok, written, why = pcall(ns.Apply.Write, cvar, value)
+	local ok, written, why = pcall(ns.Apply.Write, cvar, value, REASON)
 	if ok and written then return true end
 	if not (ok and why == "combat") then ns.Smart._Fail(cvar) end
 	return false
@@ -130,11 +133,12 @@ end
 
 local function decide(sc)
 	local target, n, Smart = run.target, sc.n, ns.Smart
+	local hold = target * HOLD_AT
 	if n >= SCENE_MAX then return finishScene(sc) end
-	if sc.since >= HOLD_BUCKETS and n >= HOLD_BUCKETS and p10(HOLD_BUCKETS, n) >= target then return finishScene(sc) end
+	if sc.since >= HOLD_BUCKETS and n >= HOLD_BUCKETS and p10(HOLD_BUCKETS, n) >= hold then return finishScene(sc) end
 	if sc.since < CHANGE_GAP then return end
 	local recent = mean(LOWER_BUCKETS, n)
-	if recent < target then
+	if recent < hold then
 		local cvar, _, to = Smart._PickLower()
 		if cvar and step(sc, cvar, to) then return end
 	elseif n >= RAISE_BUCKETS then
@@ -144,7 +148,7 @@ local function decide(sc)
 			if cvar and step(sc, cvar, to) then return end
 		end
 	end
-	sc.status = recent >= target and "holding" or "searching"
+	sc.status = recent >= hold and "holding" or "searching"
 end
 
 -- In combat the search pauses (nothing written) and warms up again after the fight.
@@ -168,11 +172,12 @@ local function onBucket(fps)
 	fire()
 end
 
-local function endRun()
+local function endRun(keepOff)
 	local r = run
 	run = nil
 	ns.Smart._Listen(nil)
-	if ns.Apply.SetSwitching then pcall(ns.Apply.SetSwitching, r.wasSwitching) end
+	if r.targetFPS then pcall(ns.Apply.Write, TARGET_FPS, r.targetFPS, REASON) end
+	if ns.Apply.SetSwitching and not keepOff then pcall(ns.Apply.SetSwitching, r.wasSwitching) end
 end
 
 function Calibrate.State()
@@ -200,7 +205,8 @@ function Calibrate.Start(target)
 	if not (Smart and Smart._Listen and Apply and Apply.Write and Catalog and Catalog.LIST and Profiles) then return false, "not loaded" end
 	local db = type(ns.db) == "table" and ns.db or {}
 	target = tonumber(target) or tonumber(db.smart and db.smart.target) or 60
-	target = math.floor(math.max(TARGET_MIN, math.min(TARGET_MAX, target)) + 0.5)
+	local limit = tonumber(Smart.Limit and Smart.Limit())
+	target = math.floor(math.max(TARGET_MIN, math.min(TARGET_MAX, limit or TARGET_MAX, target)) + 0.5)
 	if Smart.Enabled() then Smart.SetEnabled(false) end
 	if Smart.CancelAdjust then Smart.CancelAdjust() end
 	local wasSwitching = not (type(db.options) == "table" and db.options.switching == false)
@@ -208,6 +214,8 @@ function Calibrate.Start(target)
 	for i = 1, CHANGES do changes[i] = {} end
 	run = { target = target, scenes = {}, snapshot = knobValues(), wasSwitching = wasSwitching, changes = changes, nChanges = 0 }
 	if Apply.SetSwitching then pcall(Apply.SetSwitching, false) end
+	-- The game's own Target FPS lowers settings by itself and would fight the search.
+	if tonumber(ns.Get and ns.Get(TARGET_FPS)) == 1 and pcall(Apply.Write, TARGET_FPS, 0, REASON) then run.targetFPS = 1 end
 	local ok, loc = pcall(function() return ns.Location and ns.Location.Current() end)
 	newScene(ok and loc or nil)
 	Smart._Listen(onBucket)
@@ -235,10 +243,10 @@ function Calibrate.Finish()
 	return id
 end
 
-function Calibrate.Stop()
+function Calibrate.Stop(opts)
 	if not run then return false end
 	writeAll(run.snapshot)
-	endRun()
+	endRun(opts and opts.keepOff)
 	fire()
 	return true
 end

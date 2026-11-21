@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.0 — 2026-11-21
+
+- Smart mode is steadier on every kind of machine:
+  - Tabbing out of the game or minimising it no longer lowers your settings.
+  - Where lowering settings gains no FPS, such as a crowded city limited by the processor, Smart mode hands them back instead of keeping them low.
+  - Without a frame cap it no longer takes a calm scene for your display's limit, and it brings quality back when the load is gone.
+  - It no longer raises quality between pulls in a place where your fights run short of the target.
+  - Quality comes back faster after a heavy moment, and a new target, goal, minimum or maximum takes effect at once.
+  - Turning Smart mode off puts your profile back at once.
+- Fixed: the Eco goal was lost after a reload or relog.
+- Fixed: a change made in the game's own Graphics menu was undone at the next zone change. It is now kept wherever no profile sets that setting.
+- Fixed: Find my best settings saved lower settings than needed when your display or frame cap sits at the target.
+- Fixed: a setting could stay greyed out as not supported after the game refused one value.
+- Your own edit of a texture setting applies at once. A change from switching profiles still waits, and the Overview page shows it with Apply now.
+- "Switch by location" is now "Manage my graphics", the addon's on and off switch. Smart mode turns it on, and turning it off turns Smart mode off.
+- The presets Low to Ultra now match the game's quality slider at 2, 4, 6, 8 and 10.
+- The window: drag it by its title bar. Space and Enter no longer press whatever is under the pointer, the mouse wheel scrolls the page instead of changing sliders, ready checks and queue popups show above it, and Escape closes it with one press.
+- Clearer wording in the window and in chat, and `/fsg help` lists every command.
+
 ## 1.0.0-beta.4 — 2026-11-20
 
 - New: render scale above 100%. A profile's Render scale slider now goes up to the game's own maximum, as high as 200%, for a sharper picture. Where the game stops at 100% on your display, the tooltip says so.

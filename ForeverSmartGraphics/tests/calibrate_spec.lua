@@ -48,6 +48,7 @@ local function fresh(values, smartOn)
 	function n.debug() end
 	function n.plain(v) return v end
 	function n.InCombat() return false end
+	function n.Get(cvar) return store[cvar] ~= nil and tostring(store[cvar]) or nil end
 	n.db = { options = { switching = true }, smart = { enabled = false, target = 60, scaleFloor = 0.6, learned = {} }, unsupported = {} }
 	n.Catalog = {
 		LIST = LIST,
@@ -89,6 +90,8 @@ local function fresh(values, smartOn)
 	assert(loadfile(dir .. "/Smart.lua"))("ForeverSmartGraphics", ns)
 	assert(loadfile(dir .. "/Calibrate.lua"))("ForeverSmartGraphics", ns)
 	ns.Fire("FSG_READY")
+	-- Smart.Limit (contract 1) may not be in Smart.lua yet; nil means no known limit.
+	ns.Smart.Limit = function() return nil end
 	if smartOn then ns.Smart.SetEnabled(true) end
 	ns.writes = {}
 	return ns.Calibrate
@@ -291,6 +294,76 @@ do
 	ns.commands.stop({})
 	ns.commands.findbest({ "45" })
 	check("slash: findbest table target", C.State().target == 45)
+end
+
+-- A display or frame cap at the target reads a little under it: that holds, nothing is cut.
+for _, fps in ipairs({ 59.94, 60.0 }) do
+	local C = fresh()
+	ns.Smart.Limit = function() return 60 end
+	C.Start(60)
+	run(25, fps)
+	local sc = C.State().scenes[1]
+	check(("capped %.2f: done in 20 s"):format(fps), sc.done and sc.seconds == 20, sc.seconds)
+	check(("capped %.2f: nothing changed"):format(fps), #ns.writes == 0, #ns.writes)
+	C.Finish()
+	local made = ns.created[1]
+	check(("capped %.2f: saved as found"):format(fps), made and near(made.values.RenderScale, 0.75) and made.values.shadowSoft == 1 and made.values.graphicsSSAO == 3)
+end
+do
+	local C = fresh()
+	C.Start(60)
+	run(30, 45)
+	check("short of the target: still cut", store.RenderScale < 0.75 and store.shadowSoft == 0, store.RenderScale)
+	C.Stop()
+	fresh()
+	ns.Smart.Limit = function() return 50 end
+	ns.Calibrate.Start(60)
+	check("a limit under the target becomes the target", ns.Calibrate.State().target == 50)
+end
+
+-- The game's own Target FPS is off during a run and back after it.
+do
+	local C = fresh({ useTargetFPS = 1 })
+	C.Start(60)
+	check("target fps: off at start", store.useTargetFPS == 0)
+	C.Stop()
+	check("target fps: back at stop", store.useTargetFPS == 1)
+	C = fresh({ useTargetFPS = 1 })
+	C.Start(60)
+	run(40, 40)
+	C.Finish()
+	check("target fps: back at finish", store.useTargetFPS == 1)
+	C = fresh({ useTargetFPS = 0 })
+	C.Start(60)
+	C.Stop()
+	check("target fps: left alone when off", #writesOf("useTargetFPS") == 0)
+end
+
+-- Steps carry their own reason for the chat log.
+do
+	local C, reasons = fresh(), {}
+	local write = ns.Apply.Write
+	ns.Apply.Write = function(cvar, value, reason) reasons[#reasons + 1] = reason; return write(cvar, value) end
+	C.Start(60)
+	run(10, 40)
+	check("reason: Find my best settings", #reasons > 0 and reasons[1] == "Find my best settings" and reasons[#reasons] == "Find my best settings", reasons[1])
+end
+
+-- Restore original stops a run and leaves switching off.
+do
+	local C = fresh()
+	C.Start(60)
+	run(10, 40)
+	ns.Apply.RestoreOriginal = function()
+		ns.Calibrate.Stop({ keepOff = true })
+		ns.Apply.SetSwitching(false)
+	end
+	ns.Apply.RestoreOriginal()
+	check("restore: run stopped", not C.State().running)
+	-- Turning switching on, even for a moment, refreshes and writes the profile over the restore.
+	local flipped = false
+	for i = 2, #ns.switching do flipped = flipped or ns.switching[i] == true end
+	check("restore: switching stays off", ns.db.options.switching == false and not flipped, #ns.switching)
 end
 
 -- The game font draws U+2192 and U+2212 as squares.

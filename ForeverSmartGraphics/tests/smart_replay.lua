@@ -177,4 +177,20 @@ io.write("\nS5 sustained heavy fight-free load in A (raw 58)\n")
 run(600, 58); since("10 min at raw 58")
 run(600, 100); since("load gone, 10 min")
 run(1200, 100); since("load gone, next 20 min")
+io.write("\nMachine 2: no display limit (uncapped), Max Background FPS on at 30; learning starts over\n")
+CEIL = math.huge
+W.cvars.useMaxFPSBk, W.cvars.maxFPSBk = "1", "30"
+db.smart.ceiling = nil
+ns.Smart.ResetLearning()
+mark = #writes
+io.write("\nM2-S1 light scene (raw 100 at original), target 75\n")
+run(1200, 100); since("20 min")
+io.write("\nM2-S2 alt-tabbed 5 min (the background cap), then back\n")
+for _ = 1, 300 do W.fps = 30; W.advance(1, 1 / 30) end
+since("5 min in the background")
+run(600, 100); since("10 min back")
+io.write("\nM2-S3 heavy 5 min (raw 50), then light again\n")
+run(300, 50); since("5 min heavy")
+run(1800, 100); since("30 min light")
+
 for _, line in ipairs(W.log) do if line:find("error") or line:find("skipped") then io.write("CHAT ERROR: " .. line .. "\n") end end

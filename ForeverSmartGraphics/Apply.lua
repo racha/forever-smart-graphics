@@ -1,19 +1,19 @@
 -- Applies the wanted profile for the current location. The addon's only C_CVar.SetCVar call is in Apply.Write.
 -- Order: the quality presets first (each rewrites engine cvars), then render, then hidden overrides.
--- Heavy settings (texture reloads, 0.4–0.7 s stutter) wait: written at a loading screen, or after a 10 s countdown
--- the toast shows (paused in combat), or at once with Apply now.
+-- Heavy settings (texture reloads, 0.4-0.7 s stutter) from the player's own action are written at once. Any other
+-- heavy change waits: written at a loading screen, after a 10 s countdown the toast shows (paused in combat), with
+-- Announce off quietly after 10 minutes, or at once with Apply now.
 local _, ns = ...
 local Apply = {}
 ns.Apply = Apply
 
 local TARGET_FPS = "useTargetFPS"
--- The player's frame cap: never written automatically, only put back by RestoreOriginal (and once by the goal/pace
--- migration in Core after the old Efficient style).
+-- The player's frame cap: Apply only puts it back in RestoreOriginal (Smart's Eco goal manages it while on).
 local FPS_CAP = { "maxFPS", "useMaxFPS" }
 local COUNTDOWN, LOADING_WINDOW, AFTER_LOADING = 10, 3, 0.5
 -- Announce off: a heavy change waits for a loading screen, but never longer than this (out of combat), then lands quietly.
 local QUIET_WAIT = 600
-local quietAt
+local quietAt, quietDue
 local MISSES_UNSUPPORTED = 2
 local TOLERANCE = 1e-3
 local RENDER_SCALE, RENDER_LIMIT_FLOOR = "RenderScale", 0.5
@@ -21,10 +21,10 @@ local RENDER_SCALE, RENDER_LIMIT_FLOOR = "RenderScale", 0.5
 local misses = {}
 -- Nothing changes in combat unless the player asks: automatic writes wait here (latest value wins) until combat ends.
 local held = {}
+-- Held values a profile refresh asked for: at combat end a fresh refresh decides those again.
+local heldByRefresh, refreshing = {}, false
 local USER = { user = true }
 local AFTER_COMBAT = "after combat"
--- Hidden cvars this session wrote from a profile; once no profile wants them they go back to the original value.
-local overridden = {}
 local writing = false
 local enteredAt = -math.huge
 local pending, ticker
@@ -35,9 +35,9 @@ local smartWasOn
 local LINE_MAX = 250
 local DEFAULT_REASON = "smart mode"
 local REASONS = { smart = "smart mode", loading = "loading screen" }
-local SOURCES = { ["Find my best settings"] = "calibrate", ["Smart adjust"] = "adjust", ["Restore original"] = "restore", ["Apply now"] = "apply" }
+local SOURCES = { ["Find my best settings"] = "calibrate", ["Restore original"] = "restore", ["Apply now"] = "apply" }
 -- Smart's own steps are frequent: chat shows them only with options.chatLogSmart; FSG_CHANGES always carries them.
-local QUIET = { smart = true, calibrate = true, adjust = true }
+local QUIET = { smart = true, calibrate = true }
 local changes, changeOrder, flushQueued = {}, {}, false
 
 local function sourceOf(reason)
@@ -97,17 +97,14 @@ local function noteChange(cvar, from, to, reason)
 end
 
 -- Profile switches read "Open world: Default"; Smart's and the loading screen's own words otherwise.
--- The chat log's reason for a value Smart.Adjust shaped: "smart mode (Fidelity)", plus a note when it is the value
--- Smart learned for this place.
-local function smartReason(locKey, cvar, value)
+-- The chat log's reason for a value Smart.Adjust shaped: "smart mode (Fidelity)".
+local function smartReason(locKey)
 	local Smart, name = ns.Smart, nil
 	local key = Smart and Smart.Goal and Smart.Goal(locKey)
 	for _, goal in ipairs(Smart and Smart.GOALS or {}) do
 		if goal.key == key then name = goal.name end
 	end
-	local learned = ns.db.smart.learned[locKey]
-	local mine = learned and learned.values and ns.Catalog.Same(cvar, learned.values[cvar], value)
-	return "smart mode" .. (name and " (" .. name .. ")" or "") .. (mine and ", learned for this place" or "")
+	return "smart mode" .. (name and " (" .. name .. ")" or "")
 end
 
 local function readable(reason)
@@ -143,7 +140,7 @@ function Apply.Write(cvar, value, reason, opts)
 	if type(cvar) ~= "string" or ns.Catalog.NEVER[cvar:lower()] or not value then return false, nil end
 	if not (C_CVar and C_CVar.SetCVar) then return false, nil end
 	if ns.InCombat() and not (opts and opts.user) then
-		held[cvar] = value
+		held[cvar], heldByRefresh[cvar] = value, refreshing or nil
 		ns.debug("held %s %s for combat end (%s)", cvar, format(value), tostring(reason))
 		return false, "combat"
 	end
@@ -156,18 +153,22 @@ function Apply.Write(cvar, value, reason, opts)
 	noteChange(cvar, before, readback, reason or DEFAULT_REASON)
 	ok = ok and ns.plain(result) ~= false and ns.Catalog.Same(cvar, readback, value)
 	ns.debug("write %s %s -> %s%s", cvar, format(value), tostring(readback), ok and "" or " (not taken)")
-	if ok then return true, readback end
+	if ok then
+		misses[cvar] = nil
+		return true, readback
+	end
 
-	-- Moved, but a full step short of the value asked: the client clamped it, so that is this machine's limit.
+	-- A full step short of the value asked at a legal value, moved or kept: the client clamped it (or would not leave
+	-- that side), so that is this machine's limit on that side for this session, not a setting it lacks.
 	local entry = ns.Catalog.Get(cvar)
-	if entry and readback and not same(readback, before) then
-		if clamped(entry, value, readback) then
-			local db = ns.db
-			db.limits[entry.cvar], db.limitSides[entry.cvar] = readback, readback < value and "max" or "min"
-			ns.Fire("FSG_LIMIT", entry.cvar, readback)
-		end
+	local legal = entry and readback and readback >= entry.min - TOLERANCE and readback <= entry.max + TOLERANCE
+	if legal and clamped(entry, value, readback) then
+		local db = ns.db
+		db.limits[entry.cvar], db.limitSides[entry.cvar] = readback, readback < value and "max" or "min"
+		ns.Fire("FSG_LIMIT", entry.cvar, readback)
 		return false, readback
 	end
+	if readback and not same(readback, before) then return false, readback end
 
 	misses[cvar] = (misses[cvar] or 0) + 1
 	if entry and misses[cvar] >= MISSES_UNSUPPORTED and not ns.db.unsupported[entry.cvar] then
@@ -191,13 +192,26 @@ function Apply.Active()
 	return { loc = loc, profileId = id, profileName = profile and profile.name or "Default", source = source }
 end
 
-function Apply.Pending() return pending end
+local function quietSeconds() return math.max(0, math.ceil((quietAt or GetTime()) - GetTime())) end
 
-local quietDue
+-- { values, seconds, reason, waitingCombat, quiet }: quiet (Announce off) has no countdown; seconds is the time left
+-- until it lands by itself.
+function Apply.Pending()
+	if pending and pending.quiet then pending.seconds = quietSeconds() end
+	return pending
+end
 
 local function stopTicker()
 	if ticker then ticker:Cancel() end
 	ticker = nil
+end
+
+local function clearPending()
+	quietAt = nil
+	stopTicker()
+	if not pending then return end
+	pending = nil
+	ns.Fire("FSG_PENDING", nil)
 end
 
 local function writeOrdered(values, reason, opts)
@@ -205,13 +219,6 @@ local function writeOrdered(values, reason, opts)
 		local value = values[entry.cvar]
 		if value ~= nil then Apply.Write(entry.cvar, value, reason, opts) end
 	end
-end
-
-function Apply.CombatHeld()
-	if not next(held) then return nil end
-	local out = {}
-	for cvar, value in pairs(held) do out[cvar] = value end
-	return out
 end
 
 -- One batch at combat end: Catalog order, then the extras; values already in place are skipped.
@@ -228,19 +235,20 @@ local function flushHeld()
 	end
 end
 
--- reason: "Apply now" by default; the countdown passes the reason the change was queued with.
-function Apply.ApplyPending(reason)
+-- reason: the countdown's end passes the reason the change was queued with; it never runs in combat (tick waits).
+local function applyPending(reason)
 	if not pending then return false end
 
-	reason = reason or "Apply now"
 	local values = pending.values
-	pending = nil
+	pending, quietAt = nil, nil
 	stopTicker()
-	-- A user action (Apply now) except at the countdown's end, which never runs in combat (tick waits).
 	writeOrdered(values, reason, USER)
 	ns.Fire("FSG_PENDING", nil)
 	return true
 end
+
+-- The player's Apply now (window, notice, /fsg applynow). Takes no argument.
+function Apply.ApplyPending() return applyPending("Apply now") end
 
 local function tick()
 	if not pending then return stopTicker() end
@@ -253,28 +261,34 @@ local function tick()
 	end
 
 	pending.seconds = pending.seconds - 1
-	if pending.seconds <= 0 then return Apply.ApplyPending(pending.reason) end
+	if pending.seconds <= 0 then return applyPending(pending.reason) end
 	ns.Fire("FSG_PENDING", pending)
 end
 
-local function samePending(values)
-	if not pending then return false end
+local function samePending(values, quiet)
+	if not pending or pending.quiet ~= quiet then return false end
 	for cvar, value in pairs(values) do if pending.values[cvar] ~= value then return false end end
 	for cvar in pairs(pending.values) do if values[cvar] == nil then return false end end
 	return true
 end
 
-local function queue(values, reason)
-	if not next(values) then
-		if not pending then return end
-		pending = nil
-		stopTicker()
-		return ns.Fire("FSG_PENDING", nil)
-	end
-	if samePending(values) then return end
+-- quiet: no countdown and no per-second message; it lands at the next loading screen or after QUIET_WAIT.
+local function queue(values, reason, quiet)
+	if not next(values) then return clearPending() end
+	quiet = quiet or nil
+	if samePending(values, quiet) then return end
 
-	pending = { values = values, seconds = COUNTDOWN, waitingCombat = ns.InCombat(), reason = reason }
-	if not ticker then ticker = C_Timer.NewTicker(1, tick) end
+	if quiet then
+		stopTicker()
+		if not quietAt then
+			quietAt = GetTime() + QUIET_WAIT
+			C_Timer.After(QUIET_WAIT, quietDue)
+		end
+	else
+		quietAt = nil
+		if not ticker then ticker = C_Timer.NewTicker(1, tick) end
+	end
+	pending = { values = values, seconds = quiet and quietSeconds() or COUNTDOWN, waitingCombat = ns.InCombat(), reason = reason, quiet = quiet }
 	ns.Fire("FSG_PENDING", pending)
 end
 
@@ -283,6 +297,8 @@ end
 local function wanted(entry, target, effective, profileId)
 	local cvar = entry.cvar
 	if entry.group ~= "hidden" then return ns.Catalog.Clamp(cvar, target[cvar]) end
+	-- db.overridden: hidden cvars a profile wrote (kept across sessions); once none wants them they go back to the original.
+	local overridden = ns.db.overridden
 	if ns.Profiles.Sets(profileId, cvar) or not same(target[cvar], effective[cvar]) then
 		overridden[cvar] = true
 		return ns.Catalog.Clamp(cvar, target[cvar])
@@ -303,27 +319,34 @@ function quietDue()
 	Apply.Refresh("heavy", true)
 end
 
--- opts.user: the player changed something (a profile edit, switching on), so it writes even in combat.
+-- opts.user: the player did it (a profile edit, a preset, /fsg use, a hold, switching on), so it writes even in combat
+-- and heavy settings land at once.
 function Apply.Refresh(reason, loading, opts)
 	if not (ns.db and ns.db.options.switching) then return end
 
-	loading = loading or GetTime() - enteredAt < LOADING_WINDOW
+	local user = opts and opts.user
+	loading = loading or user or GetTime() - enteredAt < LOADING_WINDOW
 	local db = ns.db
 	local loc = ns.Location.Current()
 	local profileId = ns.Location.ProfileFor(loc)
 	local target, effective = Apply.Target(), ns.Profiles.Effective(profileId)
 	local heavy, written, waiting = {}, 0, 0
 	local why = readable(reason)
+	refreshing = true
 	for _, entry in ipairs(ns.Catalog.LIST) do
 		local cvar = entry.cvar
 		local value = not db.unsupported[cvar] and wanted(entry, target, effective, profileId)
 		-- Read right before the write: an earlier preset write may have changed this cvar.
-		if value and not ns.Catalog.Same(cvar, ns.Get(cvar), value) then
+		local current = ns.Get(cvar)
+		-- Only the player's own value wants it: leave it as the game has it, even outside the Catalog range.
+		local own = ns.Profiles.Sets(profileId, cvar) or not same(target[cvar], effective[cvar])
+		if not own and ns.Catalog.Same(cvar, current, db.original[cvar]) then value = nil end
+		if value and not ns.Catalog.Same(cvar, current, value) then
 			if entry.heavy and not loading then
 				heavy[cvar], waiting = value, waiting + 1
 			else
 				local shaped = smartOn() and not ns.Catalog.Same(cvar, value, effective[cvar])
-				Apply.Write(cvar, value, shaped and smartReason(loc.key, cvar, value) or why, opts)
+				Apply.Write(cvar, value, shaped and smartReason(loc.key) or why, opts)
 				written = written + 1
 			end
 		end
@@ -331,36 +354,38 @@ function Apply.Refresh(reason, loading, opts)
 
 	local wantTarget = smartOn() and 0 or tonumber(db.original[TARGET_FPS])
 	if wantTarget and not ns.Catalog.Same(TARGET_FPS, ns.Get(TARGET_FPS), wantTarget) then Apply.Write(TARGET_FPS, wantTarget, why, opts) end
+	refreshing = false
 
-	-- Announce off: heavy changes wait silently for the next loading screen (or QUIET_WAIT).
-	if db.options.announce then queue(heavy, why) elseif pending then queue({}) end
-	if waiting == 0 or db.options.announce then
-		quietAt = nil
-	elseif not quietAt then
-		quietAt = GetTime() + QUIET_WAIT
-		C_Timer.After(QUIET_WAIT, quietDue)
-	end
+	queue(heavy, why, not db.options.announce)
 	ns.debug("refresh %s: %d written, %d heavy waiting", tostring(reason), written, waiting)
+end
+
+-- Before switching off: Smart mode first (its write-back still refreshes), then nothing waits: no heavy change and
+-- nothing held for combat end.
+local function quiesce()
+	if smartOn() then ns.Smart.SetEnabled(false) end
+	clearPending()
+	held, heldByRefresh = {}, {}
 end
 
 function Apply.SetSwitching(on)
 	on = not not on
 	if ns.db.options.switching == on then return end
 
+	if not on then quiesce() end
 	ns.db.options.switching = on
 	ns.Fire("FSG_SWITCHING", on)
 	if on then Apply.Refresh("switching", nil, USER) end
 end
 
+-- Ends with switching off, whatever Find my best settings or Smart mode did on the way.
 function Apply.RestoreOriginal()
-	local db = ns.db
-	db.options.switching = false
+	local db, Calibrate = ns.db, ns.Calibrate
+	if Calibrate and Calibrate.State and Calibrate.State().running then Calibrate.Stop({ keepOff = true }) end
 	if ns.Smart and ns.Smart.CancelAdjust then ns.Smart.CancelAdjust() end
-	if ns.Smart then ns.Smart.SetEnabled(false) end
+	quiesce()
 	db.smart.enabled = false
 	db.held = nil
-	if pending then queue({}) end
-	held = {}
 
 	local original, why = db.original, "Restore original"
 	for _, entry in ipairs(ns.Catalog.LIST) do
@@ -374,7 +399,8 @@ function Apply.RestoreOriginal()
 		local value = tonumber(original[cvar])
 		if value and not ns.Catalog.Same(cvar, ns.Get(cvar), value) then Apply.Write(cvar, value, why, USER) end
 	end
-	for cvar in pairs(overridden) do overridden[cvar] = nil end
+	db.overridden = {}
+	db.options.switching = false
 	ns.Fire("FSG_SWITCHING", false)
 end
 
@@ -389,17 +415,20 @@ ns.On("PLAYER_ENTERING_WORLD", function()
 	C_Timer.After(AFTER_LOADING, refreshAfterLoading)
 end)
 ns.On("FSG_COMBAT_START", function()
-	if not pending then return end
+	if not pending or pending.quiet then return end
 	pending.waitingCombat = true
 	ns.Fire("FSG_PENDING", pending)
 end)
+-- What a refresh held is decided again by one fresh refresh; only Smart's and Find my best settings' own values are
+-- written as held.
 ns.On("FSG_COMBAT_END", function()
-	if next(held) then
-		flushHeld()
-		Apply.Refresh(AFTER_COMBAT)
-	end
+	local any = next(held)
+	for cvar in pairs(heldByRefresh) do held[cvar] = nil end
+	heldByRefresh = {}
+	flushHeld()
+	if any then Apply.Refresh(AFTER_COMBAT) end
 	if quietAt and GetTime() >= quietAt then Apply.Refresh("heavy", true) end
-	if not pending then return end
+	if not pending or pending.quiet then return end
 	pending.waitingCombat, pending.seconds = false, COUNTDOWN
 	ns.Fire("FSG_PENDING", pending)
 end)
@@ -410,9 +439,21 @@ ns.On("FSG_SMART", function()
 	Apply.Refresh("smart")
 end)
 ns.On("FSG_READY", function() smartWasOn = smartOn() end)
+
+-- A change made outside the addon (the game's own Options) is the player's new value for anything no profile and no
+-- Smart mode decides, so the next refresh keeps it instead of putting the old one back.
+local function outsideCvar(name)
+	local entry = ns.Catalog.Get(name)
+	if entry then return entry.cvar end
+	for _, cvar in ipairs(ns.EXTRA_CVARS) do if cvar:lower() == name:lower() then return cvar end end
+end
+
 ns.On("CVAR_UPDATE", function(name)
-	if writing then return end
-	ns.debug("cvar %s changed outside the addon", tostring(name))
+	if writing or not ns.db or type(name) ~= "string" then return end
+	ns.debug("cvar %s changed outside the addon", name)
+	local cvar = outsideCvar(name)
+	local value = cvar and not smartOn() and not ns.Profiles.Sets(ns.Location.ProfileFor(), cvar) and ns.Get(cvar)
+	if value then ns.db.original[cvar] = value end
 end)
 
 local function fps()
@@ -421,42 +462,52 @@ local function fps()
 	return value and string.format("%.0f", value) or "?"
 end
 
+local OFF = "is turned off; turn it on in /fsg"
+local SOURCE_WORDS = { place = "set for this place", type = "set for this kind of place", default = "Default", held = "held" }
+
 function ns.commands.status()
 	local active = Apply.Active()
 	local loc = active.loc
 	local smart = ns.Smart and ns.Smart.Enabled() and ns.Smart.State().status or "off"
-	local switching = ns.db.options.switching and "" or " (switching off)"
-	ns.log(string.format("%s · %s: %s (%s)%s · smart %s · %s fps", tostring(loc.name), ns.Location.LABELS[loc.key], active.profileName, active.source, switching, smart, fps()))
-	if pending then ns.log(string.format("texture change waiting%s", pending.waitingCombat and " for combat to end" or " " .. pending.seconds .. " s")) end
+	local switching = ns.db.options.switching and "" or " (turned off)"
+	local source = SOURCE_WORDS[active.source] or active.source
+	ns.log(string.format("%s · %s: %s (%s)%s · smart %s · %s fps", tostring(loc.name), ns.Location.LABELS[loc.key], active.profileName, source, switching, smart, fps()))
+	local info = Apply.Pending()
+	if not info then return end
+	local when = info.waitingCombat and not info.quiet and " for combat to end" or " " .. info.seconds .. " s (/fsg applynow applies it)"
+	ns.log("texture change waiting" .. when)
 end
 
 function ns.commands.use(args)
 	local name = table.concat(args, " ")
+	if name == "" then return ns.log("Usage: /fsg use <profile name>") end
 	local id = ns.Profiles.FindByName(name)
 	if not id then return ns.log("no profile named \"" .. name .. "\"") end
 
-	-- "Everywhere, for good": a hold would hide it.
-	ns.db.held = nil
 	ns.Profiles.AssignAll(id)
-	ns.log(ns.Profiles.Get(id).name .. " is now used everywhere")
+	local off = not ns.db.options.switching and " (Smart Graphics is turned off, so nothing changes until you turn it on)" or ""
+	ns.log(ns.Profiles.Get(id).name .. " is now used everywhere" .. off)
 end
 
 local NONE_HELD = "no profile is held"
 
--- /fsg profile <name> | auto | toggle <name>, or alone to report. auto and toggle are reserved first words.
+-- /fsg profile <name> | auto | toggle <name>, or alone to report. A profile's full name wins over the toggle form;
+-- auto is the keyword only as the whole argument.
 function ns.commands.profile(args)
-	local Profiles, first = ns.Profiles, (args[1] or ""):lower()
-	local held = Profiles.Held()
-	if #args == 0 then return ns.log(held and "holding " .. Profiles.Get(held).name or NONE_HELD) end
-	if not ns.db.options.switching then return ns.log("Smart Graphics is off; turn it on in /fsg") end
+	local Profiles = ns.Profiles
+	local held, name = Profiles.Held(), table.concat(args, " ")
+	if name == "" then return ns.log(held and "holding " .. Profiles.Get(held).name or NONE_HELD) end
+	if not ns.db.options.switching then return ns.log(OFF) end
 
-	local release = first == "auto"
-	local id
-	if not release then
-		local name = table.concat(args, " ", first == "toggle" and 2 or 1)
-		id = Profiles.FindByName(name)
-		if not id then return ns.log("no profile named \"" .. name .. "\"") end
-		release = first == "toggle" and id == held
+	local id = Profiles.FindByName(name)
+	local release = not id and name:lower() == "auto"
+	if not id and not release then
+		if (args[1] or ""):lower() ~= "toggle" then return ns.log("no profile named \"" .. name .. "\"") end
+		local rest = table.concat(args, " ", 2)
+		if rest == "" then return ns.log("Usage: /fsg profile toggle <profile name>") end
+		id = Profiles.FindByName(rest)
+		if not id then return ns.log("no profile named \"" .. rest .. "\"") end
+		release = id == held
 	end
 	if release then
 		if not held then return ns.log(NONE_HELD) end
@@ -470,7 +521,7 @@ end
 
 function ns.commands.restore()
 	Apply.RestoreOriginal()
-	ns.log("your original settings are back; switching by location is off (turn it on in /fsg)")
+	ns.log("put your original settings back and " .. OFF)
 end
 
 function ns.commands.applynow()

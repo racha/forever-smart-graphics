@@ -117,6 +117,12 @@ local function newNs(opts)
 			store[cvar] = value
 			return true, value
 		end,
+		Target = function()
+			local values = n.Profiles.Effective()
+			if n.Smart and n.Smart.Enabled() then return n.Smart.Adjust(locKey, values) end
+			return values
+		end,
+		SetSwitching = function(on) n.db.options.switching = on end,
 		-- The location refresh: the profile through Smart.Adjust, written where it differs (one batch).
 		Refresh = function()
 			if n.db.options.switching == false then return end
@@ -190,6 +196,11 @@ local function fired(msg)
 	for _, m in ipairs(ns.fired) do if m == msg then n = n + 1 end end
 	return n
 end
+local function uniqueTimes(list)
+	local seen, n = {}, 0
+	for _, w in ipairs(list) do if not seen[w[4]] then seen[w[4]], n = true, n + 1 end end
+	return n
+end
 local function seeCeiling(fps) ns.db.smart.ceiling = { fps = fps, t = time(), confirmed = true } end
 -- A GPU-bound scene: render scale moves fps (5 per 0.05 step), the rest a little.
 local function gpu(base) return function(st) return base + (1 - st.RenderScale) * 100 + (1 - st.shadowSoft) * 1 end end
@@ -252,6 +263,47 @@ do
 	check("target clamps", S.SetTarget(5) == 20 and S.SetTarget(500) == 240 and S.SetTarget(72.4) == 72)
 end
 
+-- Smart off leaves no trace (even with switching already off); on turns switching on; refused while Find my best
+-- settings runs.
+do
+	local S = fresh()
+	seeCeiling(74.5)
+	start(S, 75)
+	run(300, gpu(40))
+	local cut = store.shadowSoft == 0 and store.RenderScale < 1
+	ns.db.options.switching = false
+	S.SetEnabled(false)
+	local back = true
+	for cvar, v in pairs(PROFILE) do if not near(tonumber(store[cvar]), v) then back = false end end
+	check("off: every knob back at the profile, written by Smart", cut and back and ns.writes[#ns.writes][3] == "smart mode off")
+	check("on: turns switching on first", S.SetEnabled(true) == true and ns.db.options.switching == true and S.Enabled())
+	S.SetEnabled(false)
+	ns.Calibrate = { State = function() return { running = true } end }
+	local n = ns.refreshes
+	check("on: refused while Find my best settings runs", S.SetEnabled(true) == false and not S.Enabled() and ns.refreshes == n)
+	ns.commands.smart({ "on" })
+	check("slash: smart on says why it stays off", not S.Enabled() and ns.logs[#ns.logs]:find("Find my best settings") ~= nil, ns.logs[#ns.logs])
+	ns.Calibrate = nil
+	ns.commands.smart({ "toggle" })
+	check("slash: smart with another word prints usage", ns.logs[#ns.logs] == "Usage: /fsg smart [on|off]", ns.logs[#ns.logs])
+end
+
+-- Render scale off Smart's 0.05 grid (the client's own snap): no tiny rungs, and the same value is not rewritten.
+do
+	local grid = copy(PROFILE)
+	grid.RenderScale = 0.7533
+	local S = fresh(grid)
+	local tiny = false
+	for _, r in ipairs(S.Ladder()) do if r.cvar == "RenderScale" and math.abs(r.from - r.to) < 0.025 then tiny = true end end
+	check("grid: no render scale rung under half a step", not tiny)
+	store.RenderScale = 0.7533
+	start(S, 60)
+	run(600, gpu(30))
+	local tinyWrite = false
+	for _, w in ipairs(ns.writes) do if w[1] == "RenderScale" and math.abs(w[2] - tonumber(w[5])) < 0.025 then tinyWrite = true end end
+	check("grid: no render scale write under half a step", not tinyWrite)
+end
+
 -- The ladder, from the profile: best FPS per visible loss first; zero-gain knobs never on it.
 do
 	local S = fresh()
@@ -289,7 +341,7 @@ do
 	check("ceiling: goal = 97% of it", near(s.goal, 74.5 * 0.97, 0.3), s.goal)
 	check("ceiling: 30 min flat, no changes", #decisions() == 0, #decisions())
 	ns.commands.smart()
-	check("ceiling: status line says where the display tops out", ns.logs[#ns.logs]:find("display tops out at 7[45]") ~= nil, ns.logs[#ns.logs])
+	check("ceiling: status line says where the display tops out", ns.logs[#ns.logs]:find("target 75, holding 72 %(display tops out at 7[45]%)") ~= nil, ns.logs[#ns.logs])
 end
 
 -- A busy scene is not a display limit: 10 min at 55-66 fps (not flat at the top) sets no ceiling, so it cuts toward
@@ -321,6 +373,70 @@ do
 		return count % 74 == 0 and 2 or 74.5
 	end)
 	check("hitches: never count toward short", #decisions() == 0, #decisions())
+end
+
+-- Alt-tabbed at the background cap (30) or minimised (one frame every 2 s): not samples, nothing cut.
+do
+	local S = fresh(MAX)
+	store.useMaxFPSBk, store.maxFPSBk = "1", 30
+	seeCeiling(60)
+	start(S, 60)
+	run(120, 60)
+	local n = #ns.writes
+	run(300, 30)
+	run(120, 0.5)
+	check("background: alt-tab and minimised seconds cut nothing", #decisions(n) == 0, #decisions(n))
+end
+
+-- A machine with no frame cap: fps follows the costly knobs (relative to PROFILE), with a little noise.
+local seed = 11
+local function noise(amp)
+	seed = (seed * 1103515245 + 12345) % 2147483648
+	return (seed / 2147483648 - 0.5) * 2 * amp
+end
+local function uncapped(load)
+	return function(st)
+		local f = load * 1.07 ^ ((1.0 - st.RenderScale) / 0.05) * (st.shadowSoft >= 1 and 1 or 1 / 0.89)
+		f = f * 1.025 ^ (3 - st.graphicsSSAO) * 1.02 ^ (2 - st.graphicsComputeEffects) * 1.025 ^ (2 - st.graphicsLightMode)
+		if st.ResampleQuality <= 2 and st.RenderScale < 1 then f = f * 1.03 end
+		return f + noise(1)
+	end
+end
+
+-- A taxi flight or a cinematic: not samples, and no zone memory written on a taxi.
+do
+	local S = fresh()
+	seeCeiling(74.5)
+	start(S, 75)
+	run(60, 74.5)
+	local n = #ns.writes
+	local taxi = true
+	UnitOnTaxi = function() return taxi end
+	go("map:3", "outdoor", "Fields")
+	run(300, 30)
+	check("taxi: nothing cut, no zone remembered", #decisions(n) == 0 and ns.db.smart.areas["map:3"] == nil, #decisions(n))
+	UnitOnTaxi = nil
+	S = fresh()
+	seeCeiling(74.5)
+	start(S, 75)
+	run(60, 74.5)
+	n = #ns.writes
+	ns.Fire("CINEMATIC_START")
+	run(300, 30)
+	ns.Fire("CINEMATIC_STOP")
+	check("cinematic: nothing cut", #decisions(n) == 0, #decisions(n))
+end
+
+-- No frame cap: 5 min heavy (42 at the profile), then light (95): the steady level is not a limit, the cuts come back.
+do
+	local S = fresh()
+	start(S, 60)
+	run(300, uncapped(42))
+	local cut = store.shadowSoft == 0
+	run(3600, uncapped(95))
+	check("no cap: a steady scene is not a limit, cuts undone", cut and near(store.RenderScale, 1.0) and store.shadowSoft == 1 and S.Limit() == nil, store.RenderScale)
+	ns.commands.smart()
+	check("no cap: the status line names no display limit", not ns.logs[#ns.logs]:find("tops out"), ns.logs[#ns.logs])
 end
 
 -- 3. Sustained GPU load under a known 74.5 ceiling: cuts are ladder prefixes (batches when far short); lighting stays
@@ -436,6 +552,88 @@ do
 	check("subzones: same zone", S.State().area.key == "map:2")
 end
 
+-- Fights here run under the lowering line: no raises between pulls; a raise not yet judged goes back at the pull.
+do
+	local S = fresh()
+	seeCeiling(74.5)
+	ns.db.smart.areas["map:1"] = { locKey = "city", combatFps = 40 }
+	start(S, 70)
+	run(600, 74.5)
+	check("fights: no raises where fights are slow", #decisions() == 0, #decisions())
+	S = fresh()
+	seeCeiling(74.5)
+	start(S, 70)
+	local stop = T + 600
+	while S.State().status ~= "raising (testing)" and T < stop do run(1, 74.5) end
+	ns.InCombat = function() return true end
+	ns.Fire("FSG_COMBAT_START")
+	check("fights: a raise not yet judged goes back at the pull", #ns.held > 0 and ns.held[1][2] == PROFILE[ns.held[1][1]], #ns.held)
+	ns.InCombat = function() return false end
+end
+
+-- Large headroom undoes up to 4 rungs in one probe.
+do
+	local S = fresh()
+	ns.db.smart.areas["map:1"] = { locKey = "city", pos = 8, posAt = time() }
+	start(S, 60)
+	local entry = #ns.writes
+	run(120, uncapped(95))
+	local ups = {}
+	for _, w in ipairs(decisions(entry)) do if w[2] > w[5] then ups[#ups + 1] = w end end
+	check("headroom: 8 cuts back in at most 3 probes", S.State().pos <= 0 and uniqueTimes(ups) <= 3, uniqueTimes(ups))
+end
+
+-- A raise that costs over 10%: undone; when fps comes back it was the raise, so the zone keeps its best.
+do
+	local S = fresh()
+	seeCeiling(74.5)
+	ns.db.smart.areas["map:1"] = { locKey = "city", pos = 1, posAt = time() }
+	start(S, 75)
+	run(1800, function(st) return st.shadowSoft == 1 and 60 or 74.5 end)
+	local a = ns.db.smart.areas["map:1"]
+	local soft = 0
+	for _, w in ipairs(decisions()) do if w[1] == "shadowSoft" then soft = soft + 1 end end
+	check("big cost: the zone keeps its best, no repeat", a.best == 1 and soft == 2, soft)
+end
+
+-- Settings changes reopen every zone; a higher minimum lifts render scale now.
+do
+	local S = fresh()
+	ns.db.smart.areas["map:5"] = { locKey = "city", best = 2, settledFps = 60, waitUntil = time() + 900 }
+	S.SetTarget(70)
+	local a = ns.db.smart.areas["map:5"]
+	check("settings: a target change reopens zones", a.best == nil and a.settledFps == nil and a.waitUntil == nil)
+	S.SetFloor(0.6)
+	start(S, 60)
+	store.RenderScale = 0.65
+	S.SetFloor(0.9)
+	check("settings: a higher minimum lifts render scale now", near(store.RenderScale, 0.9), store.RenderScale)
+	S.SetFloor(0.6)
+	store.RenderScale = 0.65
+	S.SetGoal("fidelity")
+	check("settings: Fidelity's own minimum lifts it too", near(store.RenderScale, 0.9), store.RenderScale)
+end
+
+-- Zone flags carry a date and expire after a day; a cleanly kept raise resets the lock and back-off; ResetLearning
+-- clears all of them.
+do
+	local S = fresh()
+	seeCeiling(74.5)
+	ns.db.smart.areas["map:1"] = { locKey = "city", lockLen = 3600, backoff = 900, freeCost = time() - 2 * 86400 }
+	start(S, 70)
+	local a
+	local stop = T + 1200
+	repeat
+		run(1, 74.5)
+		a = ns.db.smart.areas["map:1"]
+	until a.lastRaise or T >= stop
+	check("flags: a day-old freeCost no longer holds the free track", store.graphicsViewDistance == 9)
+	check("flags: a kept raise resets lock and back-off", a.lastRaise and a.lockLen == nil and a.backoff == nil)
+	a.cpu, a.freeFree, a.freeCost, a.ceiling, a.noGain = time(), time(), time(), { fps = 50, t = time() }, 1
+	S.ResetLearning("city")
+	check("flags: ResetLearning clears them", a.cpu == nil and a.freeFree == nil and a.freeCost == nil and a.ceiling == nil and a.noGain == nil)
+end
+
 -- A subzone much slower than its zone becomes a zone of its own.
 do
 	local S = fresh()
@@ -508,14 +706,16 @@ do
 	seeCeiling(74.5)
 	start(S, 75)
 	local stop = T + 120
-	while #decisions() == 0 and T < stop do run(1, gpu(66)) end
-	run(12, gpu(66))
+	local soft = function(st) return 66 + (1 - st.shadowSoft) * 5 end
+	while #decisions() == 0 and T < stop do run(1, soft) end
+	run(12, soft)
 	local g = ns.db.smart.gains[decisions()[1][1]]
 	check("learn: a sustained-load cut is half a sample", g and g.n == 0.5, g and g.n)
 end
 
 -- Passive learning only: a stable zone below the ceiling with no headroom changes nothing; a probe whose revert doesn't
--- bring fps back feeds nothing; two render scale cuts under sustained load that gain under 2% make the zone CPU-bound.
+-- bring fps back feeds nothing; two render scale cuts under sustained load that gain under 2% make the zone CPU-bound,
+-- are undone, and its fps becomes the zone's limit.
 do
 	local S = fresh()
 	seeCeiling(74.5)
@@ -540,10 +740,26 @@ do
 	S = fresh()
 	seeCeiling(74.5)
 	start(S, 75)
-	run(1800, function(st) return 66 + (1 - st.shadowSoft) * 1 end)
+	run(1800, function(st) return 60 + (1 - st.shadowSoft) * 6 end)
 	local a = ns.db.smart.areas["map:1"]
-	check("learn: two render scale cuts without gain -> CPU-bound", a.cpu == true and S.Ladder()[1].cvar == "graphicsSpellDensity", tostring(a.cpu))
-	check("learn: then the CPU rungs come next", (function() for _, w in ipairs(decisions()) do if w[1] == "graphicsSpellDensity" then return true end end end)())
+	check("learn: two render scale cuts without gain -> CPU-bound", type(a.cpu) == "number" and S.Ladder()[1].cvar == "graphicsSpellDensity", tostring(a.cpu))
+	check("learn: and undone, the zone's fps its limit", near(store.RenderScale, 0.9) and #writesOf("RenderScale") == 5 and a.ceiling and near(a.ceiling.fps, 66, 0.5), store.RenderScale)
+end
+
+
+-- CPU-bound (45 whatever the settings), under a known 60 limit and under a 144 frame cap: cuts that gain nothing are
+-- undone, the zone's 45 becomes its limit, the profile stays.
+for _, capped in ipairs({ false, true }) do
+	local S = fresh()
+	if capped then store.useMaxFPS, store.maxFPS = "1", 144 else ns.db.smart.ceiling = { fps = 60, t = time() } end
+	start(S, 60)
+	run(1800, 45)
+	local a, intact = ns.db.smart.areas["map:1"], true
+	for _, cvar in ipairs({ "RenderScale", "shadowSoft", "graphicsSSAO", "graphicsComputeEffects", "graphicsLightMode", "graphicsSpellDensity", "graphicsParticleDensity" }) do
+		if not near(tonumber(store[cvar]), PROFILE[cvar]) then intact = false end
+	end
+	local label = capped and "under a 144 cap" or "under a 60 limit"
+	check("cpu-bound " .. label .. ": nothing cut for nothing", intact and a.ceiling and near(a.ceiling.fps, 45, 0.5) and near(S.State().goal, 45 * 0.97, 0.5), S.State().goal)
 end
 
 -- The ceiling must be proven below the target. Three cases from a first session.
@@ -555,7 +771,7 @@ do
 	local c = S.State().ceiling
 	check("ceiling proof: flat 60 under GPU load is no ceiling", (c == nil or c >= 75) and near(S.State().goal, 75) and not ns.db.smart.areas["map:1"].ceiling, c)
 	check("ceiling proof: and its cuts stay", store.ResampleQuality == 2 and store.graphicsSSAO < 3)
-	-- A real cap at 60 (target 75): 2 pixel and 2 CPU rungs gain nothing, go back in one batch, the zone's ceiling is 60.
+	-- A real cap at 60 (target 75): two cuts gain nothing, each is undone, the zone's ceiling is 60.
 	S = fresh(MAX)
 	start(S, 75)
 	run(1800, 60)
@@ -563,11 +779,9 @@ do
 	local cuts, backs = 0, 0
 	for _, w in ipairs(decisions()) do if w[2] < w[5] then cuts = cuts + 1 else backs = backs + 1 end end
 	check("ceiling proof: a real cap at 60 is confirmed for the zone", a.ceiling and near(a.ceiling.fps, 60, 0.5) and near(S.State().ceiling, 60, 0.5) and near(S.State().goal, 60 * 0.97, 0.5), a.ceiling and a.ceiling.fps)
-	local backAt = {}
-	for _, w in ipairs(decisions()) do if w[2] > w[5] then backAt[w[4]] = true end end
-	check("ceiling proof: undone in one batch", next(backAt) ~= nil and next(backAt, next(backAt)) == nil)
-	check("ceiling proof: 4 test cuts, all undone", cuts == 4 and backs == 4 and store.shadowSoft == 1 and near(store.RenderScale, 1.0) and store.graphicsSpellDensity == 2, cuts .. "/" .. backs)
-	check("ceiling proof: pixel rungs then CPU rungs", decisions()[1][1] == "shadowSoft" and decisions()[2][1] == "RenderScale" and decisions()[3][1] == "graphicsSpellDensity" and decisions()[4][1] == "graphicsParticleDensity")
+	local cutAt, backAt = {}, {}
+	for _, w in ipairs(decisions()) do if w[2] < w[5] then cutAt[#cutAt + 1] = w[4] else backAt[#backAt + 1] = w[4] end end
+	check("ceiling proof: two cuts, each undone", uniqueTimes(decisions()) == 4 and cuts == backs and store.shadowSoft == 1 and near(store.RenderScale, 1.0) and store.graphicsSpellDensity == 2, cuts .. "/" .. backs)
 	local n = #ns.writes
 	run(1800, 60)
 	check("ceiling proof: then quiet", #ns.writes == n, #ns.writes - n)
@@ -591,11 +805,6 @@ do
 end
 
 -- The replay's scenarios on the same model (round 2 defects).
-local function uniqueTimes(list)
-	local seen, n = {}, 0
-	for _, w in ipairs(list) do if not seen[w[4]] then seen[w[4]], n = true, n + 1 end end
-	return n
-end
 do
 	-- 1. A light scene (raw 100 at render scale 0.75): the free track goes up, then render scale climbs while fps holds
 	-- at the ceiling; 1.0 costs too much (raw 71), so it ends at 0.95.
@@ -656,8 +865,8 @@ do
 	local n = #ns.writes
 	local start = copy(store)
 	run(60, owner(58))
-	-- 2. Sustained heavy load (raw 58): cost-track cuts only; the free track drops (one batch) only at the cost floor,
-	-- gains nothing there, and goes back up.
+	-- 2. Sustained heavy load (raw 58): the free track drops (one batch) before anything below the profile, gains
+	-- nothing, and goes back up.
 	run(900, owner(58))
 	local cuts = decisions(n)
 	local rungs = S.Ladder()
@@ -666,16 +875,16 @@ do
 		if ZERO[w[1]] and not firstFree then
 			firstFree = i
 			local _, k = prefix(rungs, v)
-			atFloor = k == #rungs
+			atFloor = k == 0
 		end
 		v[w[1]] = w[2]
 	end
-	check("free track: never lowered for load before the cost floor", firstFree and atFloor, firstFree)
+	check("free track: Smart's own free batch goes before the profile is cut", firstFree and atFloor, firstFree)
 	local freeTimes = {}
 	for _, w in ipairs(cuts) do if ZERO[w[1]] then freeTimes[w[4]] = (freeTimes[w[4]] or 0) + 1 end end
 	local batches = 0
 	for _ in pairs(freeTimes) do batches = batches + 1 end
-	check("free track: dropped in one batch, judged, and back up (it gained nothing)", batches == 2 and store.graphicsViewDistance == 9 and ns.db.smart.areas["map:1"].freeFree == true, batches)
+	check("free track: dropped in one batch, judged, and back up (it gained nothing)", batches == 2 and store.graphicsViewDistance == 9 and type(ns.db.smart.areas["map:1"].freeFree) == "number", batches)
 end
 do
 	-- 3. Far short in a new zone (raw 62): one batch covers the gap; settled within 2 decisions.
@@ -780,7 +989,7 @@ do
 	check("scale max: a 135% profile is not cut to the maximum", near(store.RenderScale, 1.35) and #writesOf("RenderScale") == 0)
 	check("scale max: a lower maximum leaves the profile's own value", S.SetScaleMax(1.0) == 1.0 and near(store.RenderScale, 1.35))
 	local n = #ns.writes
-	run(60, 40)
+	run(60, function(st) return 40 + (1.35 - st.RenderScale) * 100 end)
 	local first
 	for _, w in ipairs(decisions(n)) do
 		if not first and profile135[w[1]] and w[2] < profile135[w[1]] - 1e-6 then first = w end
@@ -796,6 +1005,18 @@ do
 	check("slash: maxscale", ns.db.smart.scaleMax == 1.5 and ns.logs[#ns.logs] == "Render scale maximum 150%", ns.logs[#ns.logs])
 	ns.commands.maxscale({ "x" })
 	check("slash: maxscale usage", ns.logs[#ns.logs] == "Usage: /fsg maxscale <percent 100-200>")
+	for _, case in ipairs({ { "floor", "0.8", 0.8 }, { "floor", "80%", 0.8 }, { "maxscale", "1.5", 1.5 } }) do
+		ns.commands[case[1]]({ case[2] })
+		local key = case[1] == "floor" and "scaleFloor" or "scaleMax"
+		check("slash: " .. case[1] .. " " .. case[2], near(ns.db.smart[key], case[3]), ns.db.smart[key])
+	end
+	for _, case in ipairs({ { "floor", "-50" }, { "floor", "20" }, { "maxscale", "300" }, { "target", "-30" }, { "target", "0" }, { "target", "abc" } }) do
+		local before = ns.db.smart.target
+		ns.commands[case[1]]({ case[2] })
+		check("slash: " .. case[1] .. " " .. case[2] .. " is refused", ns.logs[#ns.logs]:find("^Usage") ~= nil and ns.db.smart.target == before, ns.logs[#ns.logs])
+	end
+	ns.commands.target({ "60.9" })
+	check("slash: target 60.9", ns.db.smart.target == 61, ns.db.smart.target)
 	ns.commands.floor({ "75" })
 	check("slash: floor says minimum", ns.logs[#ns.logs] == "Render scale minimum 75%", ns.logs[#ns.logs])
 end
@@ -877,7 +1098,7 @@ do
 	check("eco: our cap is not learned as the display's limit", ns.db.smart.ceiling == nil)
 	-- Low fps lowers; with room again it comes back to the profile and no further.
 	local n = #ns.writes
-	run(600, 40)
+	run(600, gpu(40))
 	local cuts = 0
 	for _, w in ipairs(decisions(n)) do if w[2] < w[5] then cuts = cuts + 1 end end
 	check("eco: low fps lowers", cuts >= 1 and store.shadowSoft == 0)
@@ -900,15 +1121,13 @@ do
 	ns.InCombat = function() return false end
 end
 do
-	-- The old Efficient saved cap still restores once, and the two saved caps don't touch each other.
+	-- Eco through a reload keeps the player's own saved cap.
 	local S = fresh()
 	store.useMaxFPS, store.maxFPS = "1", 60
-	ns.db.smart.capSaved = { useMaxFPS = 0, maxFPS = 144 }
 	ns.db.smart.ecoCap = { useMaxFPS = 1, maxFPS = 73 }
 	ns.db.smart.enabled, ns.db.smart.goal = true, "eco"
 	S = reload()
-	check("eco: the old Efficient cap goes back once", ns.db.smart.capSaved == nil)
-	check("eco: and Eco keeps the player's own saved cap", ns.db.smart.ecoCap.maxFPS == 73 and ns.db.smart.ecoCap.useMaxFPS == 1 and store.maxFPS == 60 and store.useMaxFPS == 1)
+	check("eco: a reload keeps the player's own saved cap", ns.db.smart.ecoCap.maxFPS == 73 and ns.db.smart.ecoCap.useMaxFPS == 1 and store.maxFPS == 60 and tonumber(store.useMaxFPS) == 1)
 	local n = #ns.writes
 	S = reload()
 	check("eco: nothing more on the next login", capWrites(n) == 0, capWrites(n))
@@ -916,6 +1135,29 @@ do
 	check("slash: goal eco", ns.db.smart.goal == "eco" and ns.logs[#ns.logs] == "Smart goal: Eco")
 	ns.commands.goal({ "raid", "eco" })
 	check("slash: goal per location eco", S.Goal("raid") == "eco")
+end
+
+do
+	-- Eco caps at the player's own lower cap; a cap changed from outside becomes the player's; the saved cap goes only
+	-- once the write-back took (in combat it waits for the fight to end).
+	local S = fresh()
+	store.useMaxFPS, store.maxFPS = "1", 50
+	S.SetGoal("eco")
+	start(S, 60)
+	check("eco: the player's own lower cap stands", store.maxFPS == 50 and ns.db.smart.ecoCap.maxFPS == 50)
+	S.SetTarget(40)
+	check("eco: a lower target caps under it", store.maxFPS == 40)
+	store.maxFPS = 100
+	ns.Fire("CVAR_UPDATE", "maxFPS")
+	check("eco: an outside change is the player's cap, Eco's back on top", ns.db.smart.ecoCap.maxFPS == 100 and store.maxFPS == 40)
+	ns.Fire("CVAR_UPDATE", "maxFPS")
+	check("eco: our own cap write is not taken for the player's", ns.db.smart.ecoCap.maxFPS == 100)
+	ns.InCombat = function() return true end
+	S.SetGoal("balanced")
+	check("eco: in combat the saved cap waits", ns.db.smart.ecoCap and ns.db.smart.ecoCap.maxFPS == 100)
+	ns.InCombat = function() return false end
+	ns.Fire("FSG_COMBAT_END")
+	check("eco: and is written back after the fight", ns.db.smart.ecoCap == nil and store.maxFPS == 100 and tonumber(store.useMaxFPS) == 1, store.maxFPS)
 end
 
 -- 10. Nothing in combat; the fight notice offers the next rungs; the player's buttons write.
@@ -995,7 +1237,7 @@ do
 	check("goal fidelity: render scale never under 0.90", lowest >= 0.9 - 1e-6, lowest)
 end
 
--- Goal and pace API, overrides, slash, migration from the five styles, Efficient's cap restored once.
+-- Goal and pace API, overrides, slash.
 do
 	local S = fresh()
 	check("goal/pace: defaults", S.Goal() == "balanced" and S.Pace() == "balanced" and S.State().style == "Balanced · Balanced")
@@ -1016,16 +1258,6 @@ do
 	check("slash: Core word tables", ns.db.smart.target == 90 and near(ns.db.smart.scaleFloor, 0.65))
 	ns.commands.smart({ "on" })
 	check("slash: smart on", S.Enabled() and ns.logs[#ns.logs]:find("^Smart %(") ~= nil)
-	S = fresh()
-	ns.db.smart.goal, ns.db.smart.pace = nil, nil
-	ns.db.smart.mode, ns.db.smart.modes = "performance", { city = "quality" }
-	ns.Fire("FSG_READY")
-	check("migrate: performance -> FPS / Aggressive", S.Goal("outdoor") == "fps" and S.Pace() == "aggressive" and ns.db.smart.goals.city == "fidelity" and ns.db.smart.mode == nil)
-	S = fresh()
-	store.useMaxFPS, store.maxFPS = 1, 60
-	ns.db.smart.capSaved = { useMaxFPS = 0, maxFPS = 144 }
-	ns.Fire("FSG_READY")
-	check("migrate: Efficient's cap restored once", store.maxFPS == 144 and store.useMaxFPS == 0 and ns.db.smart.capSaved == nil)
 end
 
 -- A maxFPS cap is the ceiling.
@@ -1033,20 +1265,29 @@ do
 	local S = fresh(MAX)
 	store.useMaxFPS, store.maxFPS = "1", 73
 	start(S, 144)
-	check("cap: maxFPS is the ceiling", S.State().ceiling == 73 and near(S.State().goal, 73 * 0.97) and S.State().cap == 73)
+	check("cap: maxFPS is the ceiling", S.State().ceiling == 73 and near(S.State().goal, 73 * 0.97) and S.State().cap == 73)	S = fresh(MAX)
+	store.useMaxFPS, store.maxFPS = "1", 73
+	start(S, 75)
+	run(600, 73)
+	check("cap: fps at the cap confirms no display ceiling", not (ns.db.smart.ceiling and ns.db.smart.ceiling.confirmed) and S.Limit() == 73)
 end
 
--- Adjust: an unknown zone takes the location type's typical position; SaveAsProfile builds on it.
+-- Adjust: a zone never visited starts at the profile; a cut position older than 6 hours is stale; SaveAsProfile
+-- builds on the zone's values.
 do
 	local S = fresh()
 	ns.db.smart.areas = { ["map:5"] = { locKey = "city", pos = 1 }, ["map:6"] = { locKey = "city", pos = 2 }, ["map:7"] = { locKey = "city", pos = 6 }, ["map:8"] = { locKey = "outdoor", pos = 9 } }
 	mapKey = "map:99"
 	local out = S.Adjust("city", copy(PROFILE))
-	check("adjust: unknown zone at the type's median position", out.shadowSoft == 0 and near(out.RenderScale, 0.95) and out.ResampleQuality == 3)
+	check("adjust: a zone never visited starts at the profile", out.shadowSoft == 1 and near(out.RenderScale, 1.0) and out.ResampleQuality == 3)
+	ns.db.smart.areas["map:7"].posAt = time()
 	mapKey = "map:7"
 	out = S.Adjust("city", copy(PROFILE))
 	check("adjust: a known zone at its own", out.ResampleQuality == 2 and out.graphicsComputeEffects == 1 and out.graphicsSSAO == 2)
 	check("adjust: input untouched, heavy and non-knobs kept", PROFILE.shadowSoft == 1 and out.textureFilteringMode == 5 and out.weatherDensity == 3)
+	ns.db.smart.areas["map:7"].posAt = time() - 7 * 3600
+	check("adjust: a cut position older than 6 hours starts at the profile", S.Adjust("city", copy(PROFILE)).shadowSoft == 1)
+	ns.db.smart.areas["map:7"].posAt = time()
 	local id = S.SaveAsProfile("city", "My city")
 	check("save: Profiles.Create with the zone's values", id == "p1" and ns.created[1].name == "My city" and ns.created[1].values.graphicsSSAO == 2)
 end
@@ -1082,12 +1323,12 @@ do
 		return write(cvar, value, reason, o)
 	end
 	start(S, 75)
-	run(60, 40)
+	run(60, gpu(40))
 	local first = decisions()[1]
 	check("failed: soft shadows skipped after a refused write", first and first[1] == "RenderScale" and store.shadowSoft == 1, first and first[1])
 	refuse = false
 	go("map:2", "city", "Other")
-	run(60, 40)
+	run(60, gpu(40))
 	check("failed: retried after a location change", store.shadowSoft == 0)
 end
 

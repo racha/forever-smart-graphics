@@ -95,12 +95,15 @@ local function usedCount(id)
 end
 
 local function usageLine(profile)
-	if profile.id == "default" then return L.USED_BY_DEFAULT end
+	if profile.id == "default" then
+		for _, key in ipairs(ns.Location.KEYS) do if not ns.db.locations[key] then return L.USED_BY_DEFAULT end end
+		return usage("default")
+	end
 
 	local preset = UI.PresetOf(profile.id)
 	local own = 0
 	for _ in pairs(profile.values) do own = own + 1 end
-	local second = preset and string.format(L.PRESET_NAMED, UI.PresetName(preset)) or (own > 0 and string.format(L.OWN_COUNT, own) or L.OWN_NONE)
+	local second = preset and string.format(L.PRESET_NAMED, UI.PresetName(preset)) or (own == 1 and L.OWN_COUNT_ONE or own > 0 and string.format(L.OWN_COUNT, own) or L.OWN_NONE)
 	return usage(profile.id) .. " · " .. second
 end
 
@@ -215,6 +218,7 @@ local function buildCreate(choices)
 	edit:SetPoint("TOPLEFT", CREATE_PAD + 56, -40)
 	edit:SetMaxLetters(32)
 	edit:SetScript("OnEnterPressed", function() Create.Close(true) end)
+	UI.EditArrows(edit)
 	edit:SetScript("OnEscapePressed", function() Create.Close(false) end)
 	createFrame.edit = edit
 	createFrame.from = createFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -456,7 +460,8 @@ local function editTip(entry, own, source, now)
 	if now ~= nil then lines[#lines + 1] = dim(string.format(L.NOW_TIP, ns.Catalog.Format(entry.cvar, now), ns.Catalog.Format(entry.cvar, value))) end
 	lines[#lines + 1] = dim(own and L.OWN_TIP or string.format(L.INHERIT_TIP, L.INHERIT_SOURCE[source] or L.INHERIT_SOURCE[ORIGINAL]))
 	local limit = ns.db.limits and ns.db.limits[entry.cvar]
-	if limit then lines[#lines + 1] = dim(string.format(L.LIMIT, ns.Catalog.Format(entry.cvar, limit))) end
+	local low = (ns.db.limitSides or {})[entry.cvar] == "min"
+	if limit then lines[#lines + 1] = dim(string.format(low and L.LIMIT_LOW or L.LIMIT, ns.Catalog.Format(entry.cvar, limit))) end
 	if entry.kind == "scale" and entry.max <= 1 then lines[#lines + 1] = dim(string.format(L.SCALE_LIMIT_TIP, ns.Catalog.Format(entry.cvar, entry.max))) end
 	lines[#lines + 1] = dim(UI.ControlKind(entry) == "dropdown" and UI.ByMode(L.CHOICE_TIP, L.CHOICE_TIP_MOUSE) or UI.ByMode(L.STEPPER_TIP, L.SLIDER_TIP_MOUSE))
 	if entry.heavy then lines[#lines + 1] = dim(L.HEAVY_TIP) end
@@ -632,7 +637,10 @@ UI.AddPage({
 		local profile = sel and ns.Profiles.Get(sel.id or "")
 		return profile and profile.name or L.DEFAULT
 	end,
-	subtitle = function(sel) return usage(sel and sel.id or "default") end,
+	subtitle = function(sel)
+		local id = sel and sel.id or "default"
+		return usage(id), usedCount(id)
+	end,
 	-- B goes back to the list, on this profile's row.
 	onBack = function()
 		local id = selected

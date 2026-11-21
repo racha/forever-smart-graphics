@@ -23,12 +23,12 @@ end
 
 -- "City", "City 2", "City 3"…, always within NAME_MAX.
 local function uniqueName(name, except)
-	local base = trim(name):sub(1, NAME_MAX)
+	local base = ns.Cut(trim(name), NAME_MAX)
 	if base == "" then base = "Profile" end
 	if not taken(base, except) then return base end
 	for n = 2, math.huge do
 		local suffix = " " .. n
-		local candidate = trim(base:sub(1, NAME_MAX - #suffix)) .. suffix
+		local candidate = trim(ns.Cut(base, NAME_MAX - #suffix)) .. suffix
 		if not taken(candidate, except) then return candidate end
 	end
 end
@@ -177,11 +177,12 @@ function Profiles.Assign(locKey, id)
 	return true
 end
 
--- Every location type and every specific place.
+-- Every location type and every specific place; a held profile is released (it would hide this one).
 function Profiles.AssignAll(id)
 	if not Profiles.Get(id) then return false end
 
 	local data = db()
+	data.held = nil
 	for _, key in ipairs(ns.Location.KEYS) do data.locations[key] = id ~= DEFAULT and id or nil end
 	for _, entry in pairs(data.overrides) do entry.profile = id end
 	changed(id)
